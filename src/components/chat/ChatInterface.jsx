@@ -1,0 +1,369 @@
+'use client'
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Send, MessageCircle, Trash2, Bot, User } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { cn } from '@/lib/utils';
+import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
+
+const ChatInterface = ({ className, projectId }) => {
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // --- Fetch project messages on mount ---
+  useEffect(() => {
+    setIsClient(true);
+    if (typeof window !== 'undefined' && window.api && projectId) {
+      window.api.getProjectMessages(projectId).then(res => {
+        if (res.success) {
+          setMessages(res.messages.map(m => ({
+            id: m.id,
+            type: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content,
+            timestamp: new Date(m.timestamp)
+          })));
+        }
+      });
+    }
+  }, [projectId]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  useEffect(() => { scrollToBottom(); }, [messages]);
+
+  // --- Send message ---
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || !projectId) return;
+
+    const userMessage = {
+      id: Date.now(),
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, userMessage]);
+    const question = inputValue;
+    setInputValue('');
+    setIsTyping(true);
+
+    try {
+      const res = await window.api.askProject({ projectId, question });
+      if (res.success) {
+        const aiMessage = {
+          id: Date.now() + 1,
+          type: 'assistant',
+          content: res.answer,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      } else {
+        const aiMessage = {
+          id: Date.now() + 1,
+          type: 'assistant',
+          content: res.error || 'Failed to get response.',
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      }
+    } catch (err) {
+      const aiMessage = {
+        id: Date.now() + 1,
+        type: 'assistant',
+        content: 'Error contacting project chat API.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // --- Clear project chat ---
+  const handleClearChat = () => {
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!projectId) return;
+    setIsDeleting(true);
+    try {
+      const res = await window.api.clearProjectChat(projectId);
+      if (res.success) {
+        setMessages([]);
+        setShowDeleteModal(false);
+      }
+    } catch (error) {
+      console.error('Error clearing chat:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+  };
+
+  const formatTime = (timestamp) => {
+    if (!isClient) return '';
+    return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Empty state component
+  const EmptyState = () => (
+    <div className="flex items-center justify-center h-full py-12">
+      <div className="text-center">
+        <MessageCircle className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+        <p className="text-gray-500 dark:text-gray-400 text-sm">No messages yet</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <Card className={cn(
+      "chat-container overflow-hidden relative",
+      "shadow-lg",
+      "border border-gray-200 dark:border-gray-700",
+      "bg-white dark:bg-gray-900",
+      className
+    )}>
+      {/* Header */}
+      <CardHeader className="border-b border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
+
+        <div className="flex justify-between items-center w-full">
+          {/* Left Side - Project Chat Info */}
+          <div className="flex items-center space-x-3">
+            <div className="relative">
+              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                <MessageCircle className="h-5 w-5 text-white" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800"></div>
+            </div>
+
+            <div className="flex flex-col">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Project Chat
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">
+                AI-powered project assistant
+              </p>
+            </div>
+          </div>
+
+          {/* Right Side - Delete Button */}
+          <div className="relative">
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClearChat}
+                className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+
+        {/* Left Side - Title and Subtitle */}
+        {/* <div className="flex items-center space-x-3">
+          <div className="relative">
+            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+              <MessageCircle className="h-5 w-5 text-white" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800"></div>
+          </div>
+          <div className="flex flex-col items-center space-x-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Project Chat
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">
+              AI-powered project assistant
+            </p>
+          </div>
+        </div> */}
+
+        {/* Right Side - Delete Button */}
+        {/* <div className="relative">
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClearChat}
+              className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </motion.div>
+        </div> */}
+
+
+
+      </CardHeader>
+
+      <CardContent className="chat-card-content p-0">
+        {/* Messages Area */}
+        <div className="chat-messages-area chat-scrollbar relative">
+          {messages.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="p-4 space-y-6">
+              <AnimatePresence>
+                {messages.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className={cn(
+                      "flex items-start space-x-3",
+                      message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'
+                    )}
+                  >
+                    {/* Avatar */}
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.1 }}
+                      className={cn(
+                        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md",
+                        message.type === 'user'
+                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
+                          : 'bg-gradient-to-br from-purple-500 to-purple-600'
+                      )}
+                    >
+                      {message.type === 'user' ? (
+                        <User className="w-4 h-4 text-white" />
+                      ) : (
+                        <Bot className="w-4 h-4 text-white" />
+                      )}
+                    </motion.div>
+
+                    {/* Message Bubble */}
+                    <div className={cn("flex flex-col", message.type === 'user' ? 'items-end' : 'items-start')}>
+                      <div
+                        className={cn(
+                          "rounded-2xl px-4 py-3 overflow-hidden",
+                          message.type === 'user'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
+                        )}
+                      >
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
+                          {message.content}
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 px-2">
+                        {formatTime(message.timestamp)}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Typing Indicator */}
+              {isTyping && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-start space-x-3"
+                >
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 shadow-md border border-gray-200 dark:border-gray-700">
+                    <div className="flex space-x-1">
+                      <motion.div
+                        animate={{ y: [0, -4, 0] }}
+                        transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                        className="w-2 h-2 bg-purple-500 rounded-full"
+                      />
+                      <motion.div
+                        animate={{ y: [0, -4, 0] }}
+                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                        className="w-2 h-2 bg-purple-500 rounded-full"
+                      />
+                      <motion.div
+                        animate={{ y: [0, -4, 0] }}
+                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                        className="w-2 h-2 bg-purple-500 rounded-full"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <form
+          onSubmit={handleSendMessage}
+          className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
+        >
+          <div className="relative">
+            <div className={cn(
+              "flex items-center space-x-3 p-3 rounded-lg",
+              "bg-white dark:bg-gray-700",
+              "border border-gray-200 dark:border-gray-600",
+              "transition-all duration-300",
+              inputFocused && "border-blue-400 dark:border-blue-500"
+            )}>
+              <Input
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder="Ask me anything about this project..."
+                disabled={isTyping}
+                className="flex-1 border-0 bg-transparent focus:ring-0 focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+              />
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={!inputValue.trim() || isTyping}
+                  className="bg-blue-500 hover:bg-blue-600 text-white border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </motion.div>
+            </div>
+
+
+          </div>
+        </form>
+      </CardContent>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Clear Chat History"
+        message="Are you sure you want to clear all chat messages? This action cannot be undone."
+        confirmText="Clear Chat"
+        cancelText="Cancel"
+        isLoading={isDeleting}
+      />
+    </Card>
+  );
+};
+
+export default ChatInterface;

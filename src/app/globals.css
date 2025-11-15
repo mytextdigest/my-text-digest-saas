@@ -1,0 +1,540 @@
+@import "tailwindcss";
+@import "../styles/scrollbar.css";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #3b82f6;
+  --radius: 0.5rem;
+
+  /* Primary color variations */
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-200: #bfdbfe;
+  --primary-300: #93c5fd;
+  --primary-400: #60a5fa;
+  --primary-500: #3b82f6;
+  --primary-600: #2563eb;
+  --primary-700: #1d4ed8;
+  --primary-800: #1e40af;
+  --primary-900: #1e3a8a;
+
+  /* Error color variations */
+  --error-50: #fef2f2;
+  --error-100: #fee2e2;
+  --error-200: #fecaca;
+  --error-300: #fca5a5;
+  --error-400: #f87171;
+  --error-500: #ef4444;
+  --error-600: #dc2626;
+  --error-700: #b91c1c;
+  --error-800: #991b1b;
+  --error-900: #7f1d1d;
+
+  /* Success color variations */
+  --success-50: #f0fdf4;
+  --success-100: #dcfce7;
+  --success-200: #bbf7d0;
+  --success-300: #86efac;
+  --success-400: #4ade80;
+  --success-500: #22c55e;
+  --success-600: #16a34a;
+  --success-700: #15803d;
+  --success-800: #166534;
+  --success-900: #14532d;
+
+  /* Warning color variations */
+  --warning-50: #fffbeb;
+  --warning-100: #fef3c7;
+  --warning-200: #fde68a;
+  --warning-300: #fcd34d;
+  --warning-400: #fbbf24;
+  --warning-500: #f59e0b;
+  --warning-600: #d97706;
+  --warning-700: #b45309;
+  --warning-800: #92400e;
+  --warning-900: #78350f;
+}
+
+/* Custom utility classes */
+.bg-primary-50 { background-color: var(--primary-50); }
+.bg-primary-100 { background-color: var(--primary-100); }
+.bg-primary-200 { background-color: var(--primary-200); }
+.bg-primary-300 { background-color: var(--primary-300); }
+.bg-primary-400 { background-color: var(--primary-400); }
+.bg-primary-500 { background-color: var(--primary-500); }
+.bg-primary-600 { background-color: var(--primary-600); }
+.bg-primary-700 { background-color: var(--primary-700); }
+.bg-primary-800 { background-color: var(--primary-800); }
+.bg-primary-900 { background-color: var(--primary-900); }
+
+.text-primary-50 { color: var(--primary-50); }
+.text-primary-100 { color: var(--primary-100); }
+.text-primary-200 { color: var(--primary-200); }
+.text-primary-300 { color: var(--primary-300); }
+.text-primary-400 { color: var(--primary-400); }
+.text-primary-500 { color: var(--primary-500); }
+.text-primary-600 { color: var(--primary-600); }
+.text-primary-700 { color: var(--primary-700); }
+.text-primary-800 { color: var(--primary-800); }
+.text-primary-900 { color: var(--primary-900); }
+
+.border-primary-50 { border-color: var(--primary-50); }
+.border-primary-100 { border-color: var(--primary-100); }
+.border-primary-200 { border-color: var(--primary-200); }
+.border-primary-300 { border-color: var(--primary-300); }
+.border-primary-400 { border-color: var(--primary-400); }
+.border-primary-500 { border-color: var(--primary-500); }
+.border-primary-600 { border-color: var(--primary-600); }
+.border-primary-700 { border-color: var(--primary-700); }
+.border-primary-800 { border-color: var(--primary-800); }
+.border-primary-900 { border-color: var(--primary-900); }
+
+.ring-primary-50 { --tw-ring-color: var(--primary-50); }
+.ring-primary-100 { --tw-ring-color: var(--primary-100); }
+.ring-primary-200 { --tw-ring-color: var(--primary-200); }
+.ring-primary-300 { --tw-ring-color: var(--primary-300); }
+.ring-primary-400 { --tw-ring-color: var(--primary-400); }
+.ring-primary-500 { --tw-ring-color: var(--primary-500); }
+.ring-primary-600 { --tw-ring-color: var(--primary-600); }
+.ring-primary-700 { --tw-ring-color: var(--primary-700); }
+.ring-primary-800 { --tw-ring-color: var(--primary-800); }
+.ring-primary-900 { --tw-ring-color: var(--primary-900); }
+
+/* Error colors */
+.bg-error-50 { background-color: var(--error-50); }
+.bg-error-100 { background-color: var(--error-100); }
+.bg-error-200 { background-color: var(--error-200); }
+.bg-error-300 { background-color: var(--error-300); }
+.bg-error-400 { background-color: var(--error-400); }
+.bg-error-500 { background-color: var(--error-500); }
+.bg-error-600 { background-color: var(--error-600); }
+.bg-error-700 { background-color: var(--error-700); }
+.bg-error-800 { background-color: var(--error-800); }
+.bg-error-900 { background-color: var(--error-900); }
+
+.text-error-50 { color: var(--error-50); }
+.text-error-100 { color: var(--error-100); }
+.text-error-200 { color: var(--error-200); }
+.text-error-300 { color: var(--error-300); }
+.text-error-400 { color: var(--error-400); }
+.text-error-500 { color: var(--error-500); }
+.text-error-600 { color: var(--error-600); }
+.text-error-700 { color: var(--error-700); }
+.text-error-800 { color: var(--error-800); }
+.text-error-900 { color: var(--error-900); }
+
+.border-error-50 { border-color: var(--error-50); }
+.border-error-100 { border-color: var(--error-100); }
+.border-error-200 { border-color: var(--error-200); }
+.border-error-300 { border-color: var(--error-300); }
+.border-error-400 { border-color: var(--error-400); }
+.border-error-500 { border-color: var(--error-500); }
+.border-error-600 { border-color: var(--error-600); }
+.border-error-700 { border-color: var(--error-700); }
+.border-error-800 { border-color: var(--error-800); }
+.border-error-900 { border-color: var(--error-900); }
+
+.ring-error-50 { --tw-ring-color: var(--error-50); }
+.ring-error-100 { --tw-ring-color: var(--error-100); }
+.ring-error-200 { --tw-ring-color: var(--error-200); }
+.ring-error-300 { --tw-ring-color: var(--error-300); }
+.ring-error-400 { --tw-ring-color: var(--error-400); }
+.ring-error-500 { --tw-ring-color: var(--error-500); }
+.ring-error-600 { --tw-ring-color: var(--error-600); }
+.ring-error-700 { --tw-ring-color: var(--error-700); }
+.ring-error-800 { --tw-ring-color: var(--error-800); }
+.ring-error-900 { --tw-ring-color: var(--error-900); }
+
+/* Success colors */
+.bg-success-50 { background-color: var(--success-50); }
+.bg-success-100 { background-color: var(--success-100); }
+.bg-success-200 { background-color: var(--success-200); }
+.bg-success-300 { background-color: var(--success-300); }
+.bg-success-400 { background-color: var(--success-400); }
+.bg-success-500 { background-color: var(--success-500); }
+.bg-success-600 { background-color: var(--success-600); }
+.bg-success-700 { background-color: var(--success-700); }
+.bg-success-800 { background-color: var(--success-800); }
+.bg-success-900 { background-color: var(--success-900); }
+
+.text-success-50 { color: var(--success-50); }
+.text-success-100 { color: var(--success-100); }
+.text-success-200 { color: var(--success-200); }
+.text-success-300 { color: var(--success-300); }
+.text-success-400 { color: var(--success-400); }
+.text-success-500 { color: var(--success-500); }
+.text-success-600 { color: var(--success-600); }
+.text-success-700 { color: var(--success-700); }
+.text-success-800 { color: var(--success-800); }
+.text-success-900 { color: var(--success-900); }
+
+.border-success-50 { border-color: var(--success-50); }
+.border-success-100 { border-color: var(--success-100); }
+.border-success-200 { border-color: var(--success-200); }
+.border-success-300 { border-color: var(--success-300); }
+.border-success-400 { border-color: var(--success-400); }
+.border-success-500 { border-color: var(--success-500); }
+.border-success-600 { border-color: var(--success-600); }
+.border-success-700 { border-color: var(--success-700); }
+.border-success-800 { border-color: var(--success-800); }
+.border-success-900 { border-color: var(--success-900); }
+
+/* Warning colors */
+.bg-warning-50 { background-color: var(--warning-50); }
+.bg-warning-100 { background-color: var(--warning-100); }
+.bg-warning-200 { background-color: var(--warning-200); }
+.bg-warning-300 { background-color: var(--warning-300); }
+.bg-warning-400 { background-color: var(--warning-400); }
+.bg-warning-500 { background-color: var(--warning-500); }
+.bg-warning-600 { background-color: var(--warning-600); }
+.bg-warning-700 { background-color: var(--warning-700); }
+.bg-warning-800 { background-color: var(--warning-800); }
+.bg-warning-900 { background-color: var(--warning-900); }
+
+.text-warning-50 { color: var(--warning-50); }
+.text-warning-100 { color: var(--warning-100); }
+.text-warning-200 { color: var(--warning-200); }
+.text-warning-300 { color: var(--warning-300); }
+.text-warning-400 { color: var(--warning-400); }
+.text-warning-500 { color: var(--warning-500); }
+.text-warning-600 { color: var(--warning-600); }
+.text-warning-700 { color: var(--warning-700); }
+.text-warning-800 { color: var(--warning-800); }
+.text-warning-900 { color: var(--warning-900); }
+
+.border-warning-50 { border-color: var(--warning-50); }
+.border-warning-100 { border-color: var(--warning-100); }
+.border-warning-200 { border-color: var(--warning-200); }
+.border-warning-300 { border-color: var(--warning-300); }
+.border-warning-400 { border-color: var(--warning-400); }
+.border-warning-500 { border-color: var(--warning-500); }
+.border-warning-600 { border-color: var(--warning-600); }
+.border-warning-700 { border-color: var(--warning-700); }
+.border-warning-800 { border-color: var(--warning-800); }
+.border-warning-900 { border-color: var(--warning-900); }
+
+/* Dark mode styles - using .dark class instead of media query */
+.dark {
+  --background: #0a0f1c;
+  --foreground: #f8fafc;
+  --card: #1a202c;
+  --card-foreground: #f8fafc;
+  --popover: #1a202c;
+  --popover-foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #2d3748;
+  --secondary-foreground: #f8fafc;
+  --muted: #2d3748;
+  --muted-foreground: #a0aec0;
+  --accent: #2d3748;
+  --accent-foreground: #f8fafc;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #4a5568;
+  --input: #4a5568;
+  --ring: #3b82f6;
+}
+
+/* Also support system preference as fallback */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #0a0f1c;
+    --foreground: #f8fafc;
+    --card: #1a202c;
+    --card-foreground: #f8fafc;
+    --popover: #1a202c;
+    --popover-foreground: #f8fafc;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --secondary: #2d3748;
+    --secondary-foreground: #f8fafc;
+    --muted: #2d3748;
+    --muted-foreground: #a0aec0;
+    --accent: #2d3748;
+    --accent-foreground: #f8fafc;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #4a5568;
+    --input: #4a5568;
+    --ring: #3b82f6;
+  }
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Ensure dark mode applies to html element */
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
+}
+
+/* Dark mode scrollbar improvements */
+.dark ::-webkit-scrollbar-track {
+  background: #2d3748;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a5568;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* Focus styles */
+.focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-500), 0 0 0 4px var(--background);
+}
+
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-500), 0 0 0 4px var(--background);
+}
+
+/* Animation utilities */
+.animate-in {
+  animation-duration: 0.2s;
+  animation-fill-mode: both;
+}
+
+.animate-out {
+  animation-duration: 0.15s;
+  animation-fill-mode: both;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Text truncation utilities */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.line-clamp-4 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.line-clamp-5 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.line-clamp-6 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+/* Text ellipsis utilities */
+.text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive text truncation */
+.truncate-responsive {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Card content container */
+.card-content-container {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Ensure cards take full width */
+.card-full-width {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Responsive grid utilities */
+@media (max-width: 640px) {
+  .card-full-width {
+    min-width: 0;
+  }
+
+  .truncate-responsive {
+    max-width: calc(100vw - 8rem);
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .truncate-responsive {
+    max-width: calc(50vw - 4rem);
+  }
+}
+
+@media (min-width: 1025px) {
+  .truncate-responsive {
+    max-width: calc(33.333vw - 3rem);
+  }
+}
+
+/* Prevent text overflow in flex containers */
+.flex-text-container {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Button responsive text */
+.btn-responsive-text .btn-text-full {
+  display: inline;
+}
+
+.btn-responsive-text .btn-text-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .btn-responsive-text .btn-text-full {
+    display: none;
+  }
+
+  .btn-responsive-text .btn-text-short {
+    display: inline;
+  }
+}
+
+/* Smooth scrolling for document containers */
+.document-scroll-container {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-foreground) var(--muted);
+}
+
+/* Better focus states for accessibility */
+.document-card:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Improved hover states */
+.document-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.dark .document-card:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* Chat container specific styles */
+.chat-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-messages-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Ensure proper flex behavior for chat components */
+.chat-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}

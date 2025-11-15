@@ -1,0 +1,50 @@
+{
+  "name": "my_text_digest_saas",
+  "version": "0.0.0",
+  "private": true,
+  "author": {
+    "name": "My Text Digest",
+    "email": "mytextdigest@gmail.com"
+  },
+  "description": "My Text Digest — SaaS for document summarization and Q&A",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
+    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/client-sqs": "^3.931.0",
+    "@aws-sdk/s3-presigned-post": "^3.922.0",
+    "@headlessui/react": "^2.2.8",
+    "@prisma/client": "^6.18.0",
+    "bcrypt": "^6.0.0",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.2.2",
+    "framer-motion": "^12.23.19",
+    "lucide-react": "^0.544.0",
+    "mammoth": "^1.11.0",
+    "next": "15.5.3",
+    "next-auth": "^4.24.13",
+    "openai": "^5.23.0",
+    "p-limit": "^7.2.0",
+    "pdf-extraction": "^1.0.2",
+    "pdf-parse": "^1.1.1",
+    "pdf-parse-fork": "^1.2.0",
+    "pdf2json": "^4.0.0",
+    "pdfjs-dist": "^2.16.105",
+    "prisma": "^6.18.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.3",
+    "tailwindcss": "^4"
+  }
+}

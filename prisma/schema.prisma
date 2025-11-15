@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER ─────────────────────────────────────────────
+model User {
+  id             String           @id @default(cuid())
+  name           String?
+  email          String           @unique
+  password       String?
+  image          String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  emailVerified  Boolean          @default(false)
+
+  // Relations
+  settings       Setting[]
+  projects       Project[]
+  documents      Document[]
+  conversations  Conversation[]
+  projectChats   ProjectConversation[]
+}
+
+model OtpToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String
+  expiresAt DateTime
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────
+model Setting {
+  id      String  @id @default(cuid())
+  key     String
+  value   String?
+  user    User    @relation(fields: [userId], references: [id])
+  userId  String
+}
+
+// ─── PROJECT ─────────────────────────────────────────────
+model Project {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  userId      String
+  documents   Document[]
+  projectChats ProjectConversation[]
+}
+
+// ─── DOCUMENT ─────────────────────────────────────────────
+model Document {
+  id         String       @id @default(cuid())
+  filename   String?
+  filePath   String?      @map("file_path")
+  content    String?
+  summary    String?
+  status     String?      @default("pending")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  starred    Int?         @default(0)
+
+  user       User         @relation(fields: [userId], references: [id])
+  userId     String
+  project    Project?     @relation(fields: [projectId], references: [id])
+  projectId  String?
+  chunks     Chunk[]
+  conversations Conversation[]
+}
+
+// ─── CHUNK ─────────────────────────────────────────────
+model Chunk {
+  id          String     @id @default(cuid())
+  chunkIndex  Int?       @map("chunk_index")
+  text        String?
+  summary     String?
+  embedding   Json?
+
+  document    Document   @relation(fields: [documentId], references: [id])
+  documentId  String     @map("document_id")
+}
+
+// ─── DOCUMENT CONVERSATION ─────────────────────────────────────────────
+model Conversation {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String
+  document    Document?     @relation(fields: [documentId], references: [id])
+  documentId  String?       @map("document_id")
+  messages    Message[]
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  role           String?
+  content        String?
+  status         String?       @default("done")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  conversation   Conversation  @relation(fields: [conversationId], references: [id])
+  conversationId String        @map("conversation_id")
+}
+
+// ─── PROJECT-LEVEL CONVERSATION ─────────────────────────────────────────────
+model ProjectConversation {
+  id          String             @id @default(cuid())
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id])
+  userId      String
+  project     Project?           @relation(fields: [projectId], references: [id])
+  projectId   String?            @map("project_id")
+  messages    ProjectMessage[]
+}
+
+model ProjectMessage {
+  id             String             @id @default(cuid())
+  role           String?
+  content        String?
+  status         String?            @default("done")
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  conversation   ProjectConversation @relation(fields: [conversationId], references: [id])
+  conversationId String             @map("conversation_id")
+}

@@ -1,0 +1,20 @@
+📝 Starting via CLI args for doc: cmhuen2re0000jieuqk6khvzr
+🚀 Worker started for doc cmhuen2re0000jieuqk6khvzr, file: Nous Meeting_ Application Security Overview (1).pdf
+❌ Failed to load dependencies: Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/home/johurul/my-text-digest-ws/my-text-digest-saas/src/utils/backgroundTasks.mjs' imported from /home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:260:11)
+    at moduleResolve (node:internal/modules/esm/resolve:920:10)
+    at defaultResolve (node:internal/modules/esm/resolve:1119:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:542:12)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:511:25)
+    at ModuleLoader.getModuleJob (node:internal/modules/esm/loader:241:38)
+    at ModuleLoader.import (node:internal/modules/esm/loader:474:34)
+    at defaultImportModuleDynamicallyForModule (node:internal/modules/esm/utils:214:31)
+    at importModuleDynamicallyCallback (node:internal/modules/esm/utils:253:12)
+    at loadDependencies (file:///home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs:60:9)
+    at async processDocument (file:///home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs:103:20) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/johurul/my-text-digest-ws/my-text-digest-saas/src/utils/backgroundTasks.mjs'
+}
+❌ Worker failed: Error: Dependency loading failed: Cannot find module '/home/johurul/my-text-digest-ws/my-text-digest-saas/src/utils/backgroundTasks.mjs' imported from /home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs
+    at loadDependencies (file:///home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs:65:11)
+    at async processDocument (file:///home/johurul/my-text-digest-ws/my-text-digest-saas/scripts/runBackgroundTasks.mjs:103:20)
