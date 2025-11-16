@@ -23,7 +23,7 @@ export async function POST(req) {
     const key = `uploads/${userId}/${fileName}`;
 
     const presignedPost = await createPresignedPost(s3, {
-      Bucket: process.env.AWS_S3_BUCKET,
+      Bucket: process.env.S3_BUCKET,
       Key: key,
       Fields: {
         "Content-Type": fileType,

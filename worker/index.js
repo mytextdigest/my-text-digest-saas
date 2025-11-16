@@ -4,6 +4,9 @@ import { extractPdfText } from "./extractPdf.js";
 import mammoth from "mammoth";
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
+import nodemailer from "nodemailer";
+import { createStructuredSummary, summarizeChunks } from "./summarize.js";
+
 
 // ENVIRONMENT VARS
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
@@ -20,6 +23,14 @@ async function streamToBuffer(stream) {
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
 }
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 
 function chunkText(text, size = 2000) {
   const chunks = [];
@@ -30,14 +41,19 @@ function chunkText(text, size = 2000) {
 
 async function processJob(job) {
   const { docId, s3Key, filename } = job;
-  console.log("Processing job:", docId, filename);
+  console.log(`🟡 Processing job: ${docId} (${filename})`);
 
+  //
+  // 1. Update status → extracting
+  //
   await prisma.document.update({
     where: { id: docId },
     data: { status: "extracting" },
   });
 
-  // Download from S3
+  //
+  // 2. Download file from S3
+  //
   const object = await s3.send(
     new GetObjectCommand({
       Bucket: S3_BUCKET,
@@ -47,7 +63,9 @@ async function processJob(job) {
 
   const buffer = await streamToBuffer(object.Body);
 
-  // Extract text
+  //
+  // 3. Extract text
+  //
   let text = "";
   if (filename.endsWith(".pdf")) {
     text = await extractPdfText(buffer);
@@ -65,6 +83,9 @@ async function processJob(job) {
     data: { content: text },
   });
 
+  //
+  // 4. Chunk text
+  //
   const chunks = chunkText(text);
 
   await prisma.chunk.createMany({
@@ -75,9 +96,17 @@ async function processJob(job) {
     })),
   });
 
-  // Embeddings
+  //
+  // 5. Generate embeddings (sequential is okay)
+  //
+  await prisma.document.update({
+    where: { id: docId },
+    data: { status: "embedding" },
+  });
+
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
+
     const emb = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: chunk.slice(0, 8000),
@@ -89,45 +118,72 @@ async function processJob(job) {
     });
   }
 
-  // Summaries
-  const summaries = [];
-  for (const chunk of chunks) {
-    const summary = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You summarize text." },
-        { role: "user", content: chunk },
-      ],
-      max_tokens: 200,
-      temperature: 0.3,
-    });
+  //
+  // 6. Summaries (PARALLEL, FAST, like Desktop App)
+  //
+  await prisma.document.update({
+    where: { id: docId },
+    data: { status: "summarizing" },
+  });
 
-    summaries.push(summary.choices[0].message.content);
+  const chunkSummaries = await summarizeChunks(chunks, filename);
+
+  //
+  // 7. Save per-chunk summaries
+  //
+  for (let i = 0; i < chunkSummaries.length; i++) {
+    await prisma.chunk.updateMany({
+      where: { documentId: docId, chunkIndex: i },
+      data: { summary: chunkSummaries[i] },
+    });
   }
 
-  // Final structured summary
-  const final = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "Create structured JSON summary." },
-      {
-        role: "user",
-        content: summaries.join("\n\n")
-      }
-    ],
-    max_tokens: 300,
-    temperature: 0.3,
-  });
+  //
+  // 8. Final structured summary
+  //
+  const structured = await createStructuredSummary(chunkSummaries, filename);
 
   await prisma.document.update({
     where: { id: docId },
     data: {
-      summary: final.choices[0].message.content,
+      summary: JSON.stringify(structured),
       status: "ready",
     },
   });
 
-  console.log("Job complete:", docId);
+  console.log(`✅ Job complete: ${docId}`);
+
+  //
+  // 9. EMAIL NOTIFICATION
+  //
+  try {
+    const doc = await prisma.document.findUnique({
+      where: { id: docId },
+      include: { user: true },
+    });
+
+    const userEmail = doc?.user?.email;
+    if (!userEmail) {
+      console.log("⚠️ No user email found, skipping notification");
+      return;
+    }
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: userEmail,
+      subject: "Your Document Is Ready ✔",
+      text: `Your document "${filename}" has been successfully processed.`,
+      html: `
+        <p>Hello,</p>
+        <p>Your document <strong>${filename}</strong> has been processed and is now ready in your dashboard.</p>
+        <p>— MyTextDigest</p>
+      `,
+    });
+
+    console.log(`📧 Email sent to: ${userEmail}`);
+  } catch (err) {
+    console.error("❌ Email sending failed:", err);
+  }
 }
 
 // Worker infinite loop
@@ -137,7 +193,7 @@ async function mainLoop() {
   while (true) {
     const res = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: QUEUE_URL,
-      MaxNumberOfMessages: 1,
+      MaxNumberOfMessages: 2,
       WaitTimeSeconds: 20,  // Long polling
       VisibilityTimeout: 600,
     }));
