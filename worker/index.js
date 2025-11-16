@@ -40,8 +40,55 @@ function chunkText(text, size = 2000) {
 }
 
 async function processJob(job) {
-  const { docId, s3Key, filename } = job;
+  const { docId, s3Key, filename, regenerate } = job;
   console.log(`🟡 Processing job: ${docId} (${filename})`);
+
+  if (regenerate === true) {
+    console.log(`🔁 Regenerating summary for ${docId}...`);
+
+    // Set status → summarizing
+    await prisma.document.update({
+      where: { id: docId },
+      data: { status: "summarizing" },
+    });
+
+    // Load existing chunks from DB
+    const existingChunks = await prisma.chunk.findMany({
+      where: { documentId: docId },
+      orderBy: { chunkIndex: "asc" },
+      select: { chunkIndex: true, summary: true, text: true },
+    });
+
+    // Use summary first if exists, else raw text
+    const chunkTexts = existingChunks.map(c => c.summary || c.text || "");
+
+    console.log(`📄 Using ${chunkTexts.length} existing chunks for regeneration`);
+
+    // Run the same summarize functions
+    const chunkSummaries = await summarizeChunks(chunkTexts, filename);
+    const structured = await createStructuredSummary(chunkSummaries, filename);
+
+    // Save back chunk summaries
+    for (let i = 0; i < chunkSummaries.length; i++) {
+      await prisma.chunk.updateMany({
+        where: { documentId: docId, chunkIndex: i },
+        data: { summary: chunkSummaries[i] },
+      });
+    }
+
+    // Save final structured summary
+    await prisma.document.update({
+      where: { id: docId },
+      data: {
+        summary: JSON.stringify(structured),
+        status: "ready",
+      },
+    });
+
+    console.log(`✅ Regenerate summary complete: ${docId}`);
+
+    return; 
+  }
 
   //
   // 1. Update status → extracting
