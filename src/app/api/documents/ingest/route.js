@@ -57,7 +57,7 @@ export async function POST(req) {
     const logPath = path.join(logDir, `background_${doc.id}.log`);
     const logFile = fs.openSync(logPath, "a");
 
-    const sqs = new SQSClient({ region: process.env.AWS_REGION });
+    const sqs = new SQSClient({ region: process.env.VPC_REGION });
 
     const messageBody = JSON.stringify({
       docId: doc.id,

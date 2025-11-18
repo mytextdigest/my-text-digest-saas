@@ -50,7 +50,7 @@ export async function POST(req, { params }) {
     fs.openSync(logPath, "a");
 
     // build SQS message
-    const sqs = new SQSClient({ region: process.env.AWS_REGION });
+    const sqs = new SQSClient({ region: process.env.VPC_REGION });
 
     const messageBody = JSON.stringify({
       docId: documentId,
