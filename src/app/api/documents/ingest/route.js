@@ -6,11 +6,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
-import { fork } from "child_process";
-import path from "path";
-import fs from "fs";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
-
 
 export async function POST(req) {
   try {
@@ -28,7 +24,6 @@ export async function POST(req) {
 
     const filename = s3Key.split("/").pop();
 
-    // Get user record
     const dbUser = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true },
@@ -37,7 +32,6 @@ export async function POST(req) {
     if (!dbUser)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    // Create initial document record
     const doc = await prisma.document.create({
       data: {
         filename,
@@ -47,15 +41,6 @@ export async function POST(req) {
         user: { connect: { id: dbUser.id } },
       },
     });
-
-    // Ensure logs directory exists
-    const logDir = path.resolve(process.cwd(), "logs");
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-
-    const logPath = path.join(logDir, `background_${doc.id}.log`);
-    const logFile = fs.openSync(logPath, "a");
 
     const sqs = new SQSClient({ region: process.env.VPC_REGION });
 
@@ -75,13 +60,12 @@ export async function POST(req) {
       })
     );
 
-    console.log(`📄 Queued document ${doc.id} for background processing`);
+    // console.log(`📄 Queued document ${doc.id} for background processing`);
 
-    return NextResponse.json({ 
-      success: true, 
-      id: doc.id, 
-      status: "queued",
-      logFile: `background_${doc.id}.log`
+    return NextResponse.json({
+      success: true,
+      id: doc.id,
+      status: "queued"
     });
 
   } catch (err) {
