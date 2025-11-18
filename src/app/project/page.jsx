@@ -79,7 +79,10 @@ function ProjectPageInner() {
       }
   
       const data = await res.json();
+
       setDocs(data);
+
+      // console.log("Loaded document: ", data)
     } catch (err) {
       console.error('Failed to load documents:', err);
     } finally {
@@ -88,7 +91,7 @@ function ProjectPageInner() {
   };
 
   async function handleFileUpload(file, userId, projectId) {
-    // 1️⃣ Get presigned URL from backend
+    //  Get presigned URL from backend
     const presignRes = await fetch("/api/s3/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -132,7 +135,9 @@ function ProjectPageInner() {
     });
   
     if (!ingestRes.ok) throw new Error("Ingestion failed");
-    console.log("📄 Ingestion started for:", file.name);
+    // console.log("📄 Ingestion started for:", file.name);
+
+    await loadDocuments(); 
   }
 
   const handleDelete = async (id) => {
@@ -146,6 +151,7 @@ function ProjectPageInner() {
     setIsDeleting(true);
   
     try {
+      console.log("Document id: ", documentToDelete.id)
       const res = await fetch(`/api/documents/${documentToDelete.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -196,7 +202,46 @@ function ProjectPageInner() {
     }
   };
 
-  const filteredDocs = activeFilter === 'starred' ? docs.filter(d => d.starred) : docs;
+  const handleToggleSelect = async (id) => {
+    try {
+      // If running inside Electron, use the API instead of IPC
+      // if (typeof window !== "undefined" && !window.api) {
+      //   // Browser dev fallback (same as before)
+      //   setDocuments((docs) =>
+      //     docs.map((doc) =>
+      //       doc.id === id ? { ...doc, selected: !doc.selected } : doc
+      //     )
+      //   );
+      //   return;
+      // }
+  
+      // --- API CALL (replacing the IPC handler) ---
+      const res = await fetch(`/api/documents/${id}/toggle-selection`, {
+        method: "POST",
+      });
+  
+      const data = await res.json();
+  
+      if (!data.success) {
+        console.error("Toggle selection API error:", data.error);
+        return;
+      }
+  
+      // Reload documents from server
+      await loadDocuments();
+    } catch (err) {
+      console.error("Toggle selection failed:", err);
+    }
+  };
+
+  // const filteredDocs = activeFilter === 'starred' ? docs.filter(d => d.starred) : docs;
+
+  const filteredDocs =
+    activeFilter === 'starred'
+      ? docs.filter(d => d.starred)
+      : activeFilter === 'unselected'
+      ? docs.filter(d => d.selected === 0 || d.selected === false || d.selected === null)
+      : docs;
 
   const documentPanel = (
     <motion.div
@@ -209,7 +254,7 @@ function ProjectPageInner() {
       <div className="flex items-center justify-between mb-4">
         <Button
           variant="ghost"
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/dashboard/')}
           className="flex items-center space-x-2 text-gray-600 dark:text-gray-400"
           style={{
             '--hover-text-color': '#000000',
@@ -246,6 +291,7 @@ function ProjectPageInner() {
           onView={(doc) => router.push(`/document?id=${doc.id}`)}
           onDelete={handleDelete}
           onToggleStar={handleToggleStar}
+          onToggleSelect={handleToggleSelect}
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
         />

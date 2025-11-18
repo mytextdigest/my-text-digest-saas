@@ -41,18 +41,39 @@ function DocumentContent() {
     }
   }, [id, router]);
 
+  const getS3Url = (filePath) => {
+    if (!filePath) return null;
+    return `${process.env.NEXT_PUBLIC_S3_PUBLIC_URL}/${filePath}`;
+  };
+
 
 
   // Load document
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.api && window.api.getDocument) {
-      window.api.getDocument(id).then((data) => {
+    if (!id) return;
+  
+    const loadDoc = async () => {
+      try {
+        const data = await fetch(`/api/documents/${id}`, {
+          method: "GET",
+          credentials: "include",
+        }).then(r => r.json());
+  
         console.log("📄 Loaded document:", data);
+  
+        // // Attach S3 URL so UI can load file
+        // if (data?.filePath) {
+        //   data.fileUrl = getS3Url(data.filePath);
+        // }
+  
         setDoc(data);
-      }).catch((error) => {
+  
+      } catch (error) {
         console.error("Error loading document:", error);
-      });
-    }
+      }
+    };
+  
+    loadDoc();
   }, [id]);
 
   // Extract DOCX -> HTML
@@ -101,80 +122,82 @@ function DocumentContent() {
   }, [doc]);
 
   useEffect(() => {
-    const handleSummaryReady = (event, { docId }) => {
-      if (docId === Number(id)) {
-        console.log("📢 Summary ready event received for doc", docId);
-
-        if (typeof window !== 'undefined' && window.api && window.api.getDocument) {
-          window.api.getDocument(id).then((data) => {
-            setDoc(data);
-
-            if (data && data.summary) {
-            let parsedSummary;
-            try {
-              parsedSummary = JSON.parse(data.summary);
-            } catch {
-              parsedSummary = { overview: data.summary, keyPoints: [] };
-            }
-
-            setSummary({
-              title: data.filename,
-              overview: parsedSummary.overview,
-              keyPoints: parsedSummary.keyPoints || [],
-              wordCount: data.content ? data.content.split(" ").length : "N/A",
-              estimatedReadTime: data.content
-                ? Math.ceil(data.content.split(" ").length / 200)
-                : "N/A",
-              documentType: data.filename.split(".").pop().toUpperCase(),
-              lastModified: new Date(data.created_at).toLocaleDateString(),
-            });
-            } else {
-              setSummary(null);
-            }
-          }).catch((error) => {
-            console.error("Error loading document in summary ready handler:", error);
+    let interval = null;
+  
+    const pollSummary = async () => {
+      try {
+        const data = await fetch(`/api/documents/${id}`, {
+          method: "GET",
+          credentials: "include"
+        }).then(r => r.json());
+  
+        setDoc(data);
+  
+        if (data?.summary) {
+          let parsed;
+          try {
+            parsed = JSON.parse(data.summary);
+          } catch {
+            parsed = { overview: data.summary, keyPoints: [] };
+          }
+  
+          setSummary({
+            title: data.filename,
+            overview: parsed.overview,
+            keyPoints: parsed.keyPoints || [],
+            wordCount: data.content ? data.content.split(" ").length : "N/A",
+            estimatedReadTime: data.content ? Math.ceil(data.content.split(" ").length / 200) : "N/A",
+            documentType: data.filename.split(".").pop().toUpperCase(),
+            lastModified: new Date(data.created_at).toLocaleDateString(),
           });
+  
+          clearInterval(interval);
         }
+      } catch (err) {
+        console.error("Error polling summary:", err);
       }
     };
-
-    if (typeof window !== 'undefined' && window.api && window.api.on) {
-      window.api.on("summary-ready", handleSummaryReady);
+  
+    if (doc && !doc.summary) {
+      interval = setInterval(pollSummary, 3000);
     }
-    return () => {
-      if (typeof window !== 'undefined' && window.api && window.api.off) {
-        window.api.off("summary-ready", handleSummaryReady);
-      }
-    };
-  }, [id]);
+  
+    return () => clearInterval(interval);
+  }, [id, doc]);
 
 
   useEffect(() => {
     if (!doc) return;
-
-    // start or reuse conversation for this doc
+  
     (async () => {
       try {
-        const res = await window.api.startConversation(doc.id);
+        // start / reuse conversation
+        const res = await fetch(`/api/documents/${doc.id}/start-conversation`, {
+          method: "POST",
+          credentials: "include",
+        }).then(r => r.json());
+  
         if (res?.success) {
           setConversationId(res.conversationId);
-
-          // load previous messages (if any)
-          const msgsRes = await window.api.getMessages(res.conversationId);
+  
+          // load previous messages
+          const msgsRes = await fetch(`/api/documents/messages/${res.conversationId}`, {
+            method: "GET",
+            credentials: "include"
+          }).then(r => r.json());
+  
           if (msgsRes?.success) {
-            // convert DB rows into chat message objects for UI
-            const mapped = msgsRes.messages.map(m => ({
+            const mapped = msgsRes.messages.map((m) => ({
               id: m.id,
               role: m.role,
               content: m.content,
-              timestamp: new Date(m.created_at)
+              timestamp: new Date(m.createdAt || m.created_at)
             }));
-            // initialize chat with system/welcome + persisted messages
-            setChat(prev => {
-              // keep any existing welcome system message + append history
-              const systemMsg = prev.find(c => c.role === 'system') || null;
-              const others = systemMsg ? [systemMsg, ...mapped] : mapped;
-              return others;
+  
+            // preserve system welcome message
+            setChat((prev) => {
+              const systemMsg = prev.find((p) => p.role === "system") || null;
+              return systemMsg ? [systemMsg, ...mapped] : mapped;
             });
           }
         }
@@ -185,64 +208,123 @@ function DocumentContent() {
   }, [doc]);
 
   // regenerate document summary
-  const generateSummary = async () => {
-    if (!doc) return;
+  // Generate summary when user clicks "Regenerate summary"
+const generateSummary = async () => {
+  if (!doc) return;
 
-    setIsGeneratingSummary(true);
-    try {
-      if (typeof window !== 'undefined' && window.api && window.api.regenerateSummary) {
-        const result = await window.api.regenerateSummary(doc.id);
+  setIsGeneratingSummary(true);
 
-        if (result.success && window.api.getDocument) {
-          window.api.getDocument(id).then((data) => {
-            console.log("📄 Loaded document:", data);
-            setDoc(data);
-          }).catch((error) => {
-            console.error("Error loading document after regenerating summary:", error);
-          });
-        }
+  try {
+    const res = await fetch(`/api/documents/${doc.id}/regenerate`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" }
+    }).then(r => r.json());
 
+    if (!res?.success) {
+      throw new Error(res?.error || "Failed to queue regenerate summary");
+    }
 
+    // Immediately re-fetch the doc once to get updated status
+    const fresh = await fetch(`/api/documents/${doc.id}`, {
+      method: "GET",
+      credentials: "include"
+    }).then(r => r.json());
 
+    // if (fresh?.filePath) fresh.fileUrl = getS3Url(fresh.filePath);
+    setDoc(fresh);
 
-
-        if (doc && doc.summary) {
-          let parsedSummary;
-          try {
-            parsedSummary = JSON.parse(doc.summary);
-          } catch {
-            parsedSummary = { overview: doc.summary, keyPoints: [] };
-          }
-
-          setSummary({
-            title: doc.filename,
-            overview: parsedSummary.overview,
-            keyPoints: parsedSummary.keyPoints || [],
-            wordCount: doc.content ? doc.content.split(" ").length : "N/A",
-            estimatedReadTime: doc.content ? Math.ceil(doc.content.split(" ").length / 200) : "N/A",
-            documentType: doc.filename.split(".").pop().toUpperCase(),
-            lastModified: new Date().toLocaleDateString(),
-          });
-        }
-
-      } else {
-        throw new Error(result.error || "Failed to regenerate summary");
+    // If summary already present (rare), update UI immediately
+    if (fresh?.summary) {
+      let parsedSummary;
+      try {
+        parsedSummary = JSON.parse(fresh.summary);
+      } catch {
+        parsedSummary = { overview: fresh.summary, keyPoints: [] };
       }
-    } catch (error) {
-      console.error("Error generating summary:", error);
+
+      setSummary({
+        title: fresh.filename,
+        overview: parsedSummary.overview,
+        keyPoints: parsedSummary.keyPoints || [],
+        wordCount: fresh.content ? fresh.content.split(" ").length : "N/A",
+        estimatedReadTime: fresh.content ? Math.ceil(fresh.content.split(" ").length / 200) : "N/A",
+        documentType: fresh.filename.split(".").pop().toUpperCase(),
+        lastModified: new Date().toLocaleDateString(),
+      });
+
+      setIsGeneratingSummary(false);
+      return;
+    }
+
+    // Otherwise poll until summary appears or timeout
+    const pollIntervalMs = 3000;
+    const maxPollSeconds = 120; // 2 minutes
+    const start = Date.now();
+    let summaryFound = false;
+
+    while ((Date.now() - start) / 1000 < maxPollSeconds) {
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+      const polled = await fetch(`/api/documents/${doc.id}`, {
+        method: "GET",
+        credentials: "include"
+      }).then(r => r.json());
+
+      // if (polled?.filePath) polled.fileUrl = getS3Url(polled.filePath);
+      setDoc(polled);
+
+      if (polled?.summary) {
+        let parsedSummary;
+        try {
+          parsedSummary = JSON.parse(polled.summary);
+        } catch {
+          parsedSummary = { overview: polled.summary, keyPoints: [] };
+        }
+
+        setSummary({
+          title: polled.filename,
+          overview: parsedSummary.overview,
+          keyPoints: parsedSummary.keyPoints || [],
+          wordCount: polled.content ? polled.content.split(" ").length : "N/A",
+          estimatedReadTime: polled.content ? Math.ceil(polled.content.split(" ").length / 200) : "N/A",
+          documentType: polled.filename.split(".").pop().toUpperCase(),
+          lastModified: new Date().toLocaleDateString(),
+        });
+
+        summaryFound = true;
+        break;
+      }
+    }
+
+    if (!summaryFound) {
+      // timed out
       setSummary({
         title: doc.filename,
-        overview: "Unable to regenerate summary at this time. Please try again later.",
+        overview: "Summary generation is still in progress. Please check back in a few moments.",
         keyPoints: [],
-        wordCount: "N/A",
-        estimatedReadTime: "N/A",
+        wordCount: doc.content ? doc.content.split(" ").length : "N/A",
+        estimatedReadTime: doc.content ? Math.ceil(doc.content.split(" ").length / 200) : "N/A",
         documentType: doc.filename.split(".").pop().toUpperCase(),
         lastModified: new Date().toLocaleDateString(),
       });
-    } finally {
-      setIsGeneratingSummary(false);
     }
-  };
+  } catch (error) {
+    console.error("Error generating summary:", error);
+    setSummary({
+      title: doc.filename,
+      overview: "Unable to regenerate summary at this time. Please try again later.",
+      keyPoints: [],
+      wordCount: "N/A",
+      estimatedReadTime: "N/A",
+      documentType: doc.filename.split(".").pop().toUpperCase(),
+      lastModified: new Date().toLocaleDateString(),
+    });
+  } finally {
+    setIsGeneratingSummary(false);
+  }
+};
+
 
   // Generate summary when switching to summary tab
   useEffect(() => {
@@ -253,16 +335,24 @@ function DocumentContent() {
       doc.status === "ready" &&
       !isGeneratingSummary
     ) {
-      window.api.getDocument(id).then((data) => setDoc(data));
+      fetch(`/api/documents/${id}`, {
+        method: "GET",
+        credentials: "include"
+      })
+        .then(r => r.json())
+        .then(data => {
+          // if (data?.filePath) data.fileUrl = getS3Url(data.filePath);
+          setDoc(data);
+        });
     }
   }, [activeTab, doc, summary, isGeneratingSummary, id]);
 
   const handleAsk = async (e) => {
     e.preventDefault();
     if (!question.trim()) return;
-
+  
     const userMessage = {
-      id: `user-${Date.now()}-${Math.random()}`, // Ensure unique ID
+      id: `user-${Date.now()}-${Math.random()}`,
       role: "user",
       content: question,
       timestamp: new Date()
@@ -270,20 +360,25 @@ function DocumentContent() {
     setChat((prev) => [...prev, userMessage]);
     setQuestion("");
     setIsTyping(true);
-
+  
     try {
-      const res = await window.api.askDocument(id, question, conversationId); // 🔑 use stored conversationId
-
+      const res = await fetch(`/api/documents/${id}/ask`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, conversationId })
+      }).then(r => r.json());
+  
       if (res?.success) {
         const assistantMessage = {
-          id: `assistant-${Date.now()}-${Math.random()}`, // Ensure unique ID
+          id: `assistant-${Date.now()}-${Math.random()}`,
           role: "assistant",
           content: res.answer,
           timestamp: new Date()
         };
         setChat((prev) => [...prev, assistantMessage]);
-
-        // 🔑 also update conversationId if backend created a new one
+  
+        // update conversationId if backend created a new one
         if (res.conversationId && res.conversationId !== conversationId) {
           setConversationId(res.conversationId);
         }
@@ -291,7 +386,7 @@ function DocumentContent() {
         const errMsg = {
           id: Date.now() + 1,
           role: "assistant",
-          content: "Sorry, I couldn't answer right now: " + (res.error || "unknown error"),
+          content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
           timestamp: new Date()
         };
         setChat((prev) => [...prev, errMsg]);
@@ -313,14 +408,17 @@ function DocumentContent() {
 
   const onConfirmClearChat = async () => {
     try {
-      const res = await window.api.clearConversation(doc.id);
+      const res = await fetch(`/api/documents/${doc.id}/clear-conversation`, {
+        method: "POST",
+        credentials: "include"
+      }).then(r => r.json());
+  
       if (res?.success) {
         setConversationId(res.conversationId);
-
-        // reset chat-related states
+  
         setIsTyping(false);
         setQuestion("");
-
+  
         setChat([
           {
             id: 1,
@@ -329,8 +427,7 @@ function DocumentContent() {
             timestamp: new Date(),
           },
         ]);
-
-        // ensure input is ready to type again
+  
         setTimeout(() => {
           inputRef.current?.focus();
         }, 0);
@@ -341,6 +438,7 @@ function DocumentContent() {
       setShowClearDialog(false);
     }
   };
+  
 
   const handleClearChat = () => {
     setShowClearDialog(true);
@@ -425,10 +523,10 @@ function DocumentContent() {
         <Button
           variant="ghost"
           onClick={() => {
-            if (doc?.project_id) {
-              router.push(`/project?id=${doc.project_id}`);
+            if (doc?.projectId) {
+              router.push(`/project?id=${doc.projectId}`);
             } else {
-              router.push("/");
+              router.push("/dashboard/");
             }
           }}
           className="flex items-center space-x-2 text-gray-600 dark:text-gray-400"

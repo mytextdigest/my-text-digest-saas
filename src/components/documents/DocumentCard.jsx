@@ -21,6 +21,7 @@ const DocumentCard = ({
   onDelete,
   onDownload,
   onToggleStar,
+  onToggleSelect,
   className 
 }) => {
   const { id, filename, created_at, file_size, starred = false } = document;
@@ -95,6 +96,19 @@ const DocumentCard = ({
           >
             <Star className={cn("h-4 w-4", starred && "fill-current")} />
           </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onToggleSelect?.(id)}
+            className={cn(
+              "h-8 w-8",
+              document.selected ? "text-green-500" : "text-gray-400"
+            )}
+            title={document.selected ? "Deselect Document" : "Select Document"}
+          >
+            <FileText className={cn("h-4 w-4", document.selected && "fill-current")} />
+          </Button>
           
           <Button
             variant="ghost"
@@ -157,6 +171,19 @@ const DocumentCard = ({
                 )}
               >
                 <Star className={cn("h-4 w-4", starred && "fill-current")} />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onToggleSelect?.(id)}
+                className={cn(
+                  "h-8 w-8",
+                  document.selected ? "text-green-500" : "text-gray-400"
+                )}
+                title={document.selected ? "Deselect Document" : "Select Document"}
+              >
+                <FileText className={cn("h-4 w-4", document.selected && "fill-current")} />
               </Button>
             </div>
           </div>

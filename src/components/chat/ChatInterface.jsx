@@ -22,19 +22,33 @@ const ChatInterface = ({ className, projectId }) => {
   // --- Fetch project messages on mount ---
   useEffect(() => {
     setIsClient(true);
-    if (typeof window !== 'undefined' && window.api && projectId) {
-      window.api.getProjectMessages(projectId).then(res => {
+    if (!projectId) return;
+  
+    async function loadMessages() {
+      try {
+        const res = await fetch(`/api/projects/messages/${projectId}`, {
+          method: "GET",
+          credentials: "include"
+        }).then(r => r.json());
+  
         if (res.success) {
-          setMessages(res.messages.map(m => ({
-            id: m.id,
-            type: m.role === 'user' ? 'user' : 'assistant',
-            content: m.content,
-            timestamp: new Date(m.timestamp)
-          })));
+          setMessages(
+            res.messages.map(m => ({
+              id: m.id,
+              type: m.role === "user" ? "user" : "assistant",
+              content: m.content,
+              timestamp: new Date(m.timestamp)
+            }))
+          );
         }
-      });
+      } catch (err) {
+        console.error("Error loading project messages:", err);
+      }
     }
+  
+    loadMessages();
   }, [projectId]);
+  
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,7 +59,7 @@ const ChatInterface = ({ className, projectId }) => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputValue.trim() || !projectId) return;
-
+  
     const userMessage = {
       id: Date.now(),
       type: 'user',
@@ -53,16 +67,23 @@ const ChatInterface = ({ className, projectId }) => {
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
+  
     const question = inputValue;
     setInputValue('');
     setIsTyping(true);
-
+  
     try {
-      const res = await window.api.askProject({ projectId, question });
+      const res = await fetch("/api/projects/ask", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, question })
+      }).then(r => r.json());
+  
       if (res.success) {
         const aiMessage = {
           id: Date.now() + 1,
-          type: 'assistant',
+          type: "assistant",
           content: res.answer,
           timestamp: new Date()
         };
@@ -70,8 +91,8 @@ const ChatInterface = ({ className, projectId }) => {
       } else {
         const aiMessage = {
           id: Date.now() + 1,
-          type: 'assistant',
-          content: res.error || 'Failed to get response.',
+          type: "assistant",
+          content: res.error || "Failed to get response.",
           timestamp: new Date()
         };
         setMessages(prev => [...prev, aiMessage]);
@@ -79,8 +100,8 @@ const ChatInterface = ({ className, projectId }) => {
     } catch (err) {
       const aiMessage = {
         id: Date.now() + 1,
-        type: 'assistant',
-        content: 'Error contacting project chat API.',
+        type: "assistant",
+        content: "Error contacting project chat API.",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMessage]);
@@ -97,14 +118,21 @@ const ChatInterface = ({ className, projectId }) => {
   const handleConfirmDelete = async () => {
     if (!projectId) return;
     setIsDeleting(true);
+  
     try {
-      const res = await window.api.clearProjectChat(projectId);
+      const res = await fetch("/api/projects/clear", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId })
+      }).then(r => r.json());
+  
       if (res.success) {
         setMessages([]);
         setShowDeleteModal(false);
       }
     } catch (error) {
-      console.error('Error clearing chat:', error);
+      console.error("Error clearing chat:", error);
     } finally {
       setIsDeleting(false);
     }

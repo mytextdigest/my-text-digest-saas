@@ -35,6 +35,7 @@ export async function GET(req) {
         createdAt: true,
         projectId: true,
         starred: true,
+        selected: true,
       },
       orderBy: { createdAt: "desc" },
     });

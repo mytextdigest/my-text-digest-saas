@@ -10,7 +10,8 @@ import {
   Upload,
   FileText,
   Star,
-  Trash2
+  Trash2,
+  CircleOff
 } from 'lucide-react';
 import DocumentCard from './DocumentCard';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +28,7 @@ const DocumentGrid = ({
   onDelete,
   onDownload,
   onToggleStar,
+  onToggleSelect,
   activeFilter = 'all',
   onFilterChange,
   className
@@ -127,7 +129,8 @@ const DocumentGrid = ({
         <div className="flex flex-wrap gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
           {[
             { id: 'all', label: 'All Documents', icon: FileText },
-            { id: 'starred', label: 'Starred', icon: Star }
+            { id: 'starred', label: 'Starred', icon: Star },
+            { id: 'unselected', label: 'Unselected', icon: CircleOff }
           ].map(filter => {
             const Icon = filter.icon;
             return (
@@ -275,25 +278,39 @@ const DocumentGrid = ({
               exit={{ opacity: 0, y: -20 }}
               className="text-center py-12"
             >
+              {/* --- Icon --- */}
               <div className="w-24 h-24 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
-                {activeFilter === 'starred' ? (
+                {activeFilter === "starred" ? (
                   <Star className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+                ) : activeFilter === "unselected" ? (
+                  <FileText className="w-12 h-12 text-gray-400 dark:text-gray-500" />
                 ) : (
                   <Search className="w-12 h-12 text-gray-400 dark:text-gray-500" />
                 )}
               </div>
+
+              {/* --- Title --- */}
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                {activeFilter === 'starred' ? 'No starred documents' : 'No documents found'}
+                {activeFilter === "starred"
+                  ? "No starred documents"
+                  : activeFilter === "unselected"
+                  ? "No unselected documents"
+                  : "No documents found"}
               </h3>
+
+              {/* --- Description --- */}
               <p className="text-gray-600 dark:text-gray-300 mb-6">
-                {activeFilter === 'starred' 
-                  ? 'Star documents to see them here' 
-                  : searchQuery 
-                    ? 'Try adjusting your search terms' 
-                    : 'Upload your first document to get started'
-                }
+                {activeFilter === "starred"
+                  ? "Star documents to see them here."
+                  : activeFilter === "unselected"
+                  ? "All your documents are currently selected for Q&A."
+                  : searchQuery
+                  ? "Try adjusting your search terms."
+                  : "Upload your first document to get started."}
               </p>
-              {activeFilter !== 'starred' && (
+
+              {/* --- Upload Button --- */}
+              {activeFilter !== "starred" && activeFilter !== "unselected" && (
                 <Button onClick={onUpload}>
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Document
@@ -323,6 +340,7 @@ const DocumentGrid = ({
                     onDelete={onDelete}
                     onDownload={onDownload}
                     onToggleStar={onToggleStar}
+                    onToggleSelect={onToggleSelect}
                   />
                 </motion.div>
               ))}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
+import { generateSignedUrl } from "@/lib/s3SignedUrl";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -17,8 +18,14 @@ export async function GET(req, { params }) {
 
   if (!doc) return NextResponse.json(null, { status: 404 });
 
+  let signedUrl = null;
+  if (doc.filePath) {
+    signedUrl = await generateSignedUrl(doc.filePath);
+  }
+
   return NextResponse.json({
     ...doc,
+    fileUrl: signedUrl,
     created_at: doc.createdAt.toISOString(),
   });
 }
@@ -49,4 +56,3 @@ export async function DELETE(req, { params }) {
   
     return NextResponse.json({ success: true });
   }
-  

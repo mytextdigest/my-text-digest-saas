@@ -65,6 +65,7 @@ export async function POST(req) {
       filename,
       projectId,
       userId: dbUser.id,
+      regenerate: false
     });
 
     await sqs.send(
