@@ -42,7 +42,7 @@ export async function POST(req) {
       },
     });
 
-    const sqs = new SQSClient({ region: process.env.VPC_REGION });
+    const sqs = new SQSClient({ region: process.env.AWS_REGION });
 
     const messageBody = JSON.stringify({
       docId: doc.id,
