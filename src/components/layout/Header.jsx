@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
+import LogoutButton from '../ui/LogoutButton';
 
 const Header = ({
   onSearch,
@@ -203,7 +204,7 @@ const Header = ({
                     >
                       General
                     </button>
-                    <button
+                    {/* <button
                       onClick={() => {
                         setActiveTab('apikey');
                         setStatus(null);
@@ -219,7 +220,7 @@ const Header = ({
                     >
                       <Key className="h-3.5 w-3.5" />
                       <span>API Key</span>
-                    </button>
+                    </button> */}
                   </div>
 
                   {/* General Tab */}
@@ -244,16 +245,20 @@ const Header = ({
                       </div>
 
                       {/* Additional Settings */}
-                      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <div className="border-t border-gray-200 dark:border-gray-700">
+                        {/* <p className="text-sm text-gray-600 dark:text-gray-400">
                           More settings coming soon...
-                        </p>
+                        </p> */}
+                        {/* Logout Button */}
+                        <LogoutButton />
                       </div>
+
                     </motion.div>
                   )}
 
                   {/* API Key Tab */}
-                  {activeTab === 'apikey' && (
+                  {/* {activeTab === 'apikey' && ( */}
+                  {activeTab === '' && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
