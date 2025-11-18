@@ -1,0 +1,1 @@
+-- baseline migration, database already contains full schema
