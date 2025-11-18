@@ -47,7 +47,7 @@ export default function HomePage() {
             </Button>
           </Link>
 
-          <Link href="/setup">
+          <Link href="/auth/signup">
             <Button
               variant="outline"
               size="lg"
