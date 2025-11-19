@@ -1,9 +1,8 @@
-// src/components/auth/SigninPageInner.jsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn, getSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -21,45 +20,24 @@ export default function SigninPageInner() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Check if user is already authenticated
-  useEffect(() => {
-    const checkSession = async () => {
-      const session = await getSession();
-      if (session) {
-        router.push(callbackUrl);
-      }
-    };
-    checkSession();
-  }, [callbackUrl, router]);
-
   const handleSignin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    try {
-      const result = await signIn("credentials", {
-        redirect: false,
-        email,
-        password,
-        callbackUrl,
-      });
+    const res = await signIn("credentials", {
+      redirect: false,
+      email,
+      password,
+      callbackUrl,
+    });
 
-      if (result?.error) {
-        setError(result.error);
-        setLoading(false);
-      } else {
-        // Force a hard redirect for Vercel
-        if (process.env.NODE_ENV === 'production') {
-            window.location.href = callbackUrl;
-        } else {
-            router.push(callbackUrl);
-            router.refresh(); // Refresh to ensure session is loaded
-        }
-      }
-    } catch (error) {
-      setError("An unexpected error occurred");
-      setLoading(false);
+    setLoading(false);
+
+    if (res?.error) {
+      setError(res.error);
+    } else {
+      router.push(callbackUrl);  // IMPORTANT
     }
   };
 
@@ -126,7 +104,7 @@ export default function SigninPageInner() {
             </form>
 
             <p className="text-sm text-center mt-4">
-              Don't have an account?{" "}
+              Don’t have an account?{" "}
               <button
                 onClick={() => router.push("/auth/signup")}
                 className="text-blue-600 hover:underline"
