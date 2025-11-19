@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -18,6 +18,9 @@ export default function SigninPage() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+
 
   const handleSignin = async (e) => {
     e.preventDefault();
@@ -28,6 +31,7 @@ export default function SigninPage() {
       redirect: false,
       email,
       password,
+      callbackUrl,
     });
 
     setLoading(false);
