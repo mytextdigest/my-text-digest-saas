@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 export const revalidate = 0;
 
+import SigninPageInner from "@/components/auth/SigninPageInner";
 import { Suspense } from "react";
-import SigninPageInner from "./SigninPageInner";
 
 export default function SigninPage() {
   return (
