@@ -39,6 +39,11 @@ export const authOptions = {
       if (token) session.user.id = token.id;
       return session;
     },
+    async redirect({ url, baseUrl }) {
+      // Allow relative callback URLs such as /dashboard
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      return url;
+    }
   },
   pages: {
     signIn: "/auth/signin",
