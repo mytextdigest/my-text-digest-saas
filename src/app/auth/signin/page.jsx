@@ -1,4 +1,6 @@
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; 
+export const preferredRegion = "auto";
 export const fetchCache = "force-no-store";
 export const revalidate = 0;
 
