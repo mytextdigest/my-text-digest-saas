@@ -40,9 +40,17 @@ export const authOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
-      // Allow relative callback URLs such as /dashboard
+      // 1. Allow relative URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`;
-      return url;
+    
+      // 2. Only allow production domain
+      try {
+        const host = new URL(url).host;
+        if (host === "my-text-digest-saas.vercel.app") return url;
+      } catch {}
+    
+      // Fallback
+      return baseUrl;
     }
   },
   pages: {
