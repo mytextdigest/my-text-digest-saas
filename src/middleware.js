@@ -4,12 +4,21 @@ export default withAuth({
   pages: { signIn: "/auth/signin" },
   callbacks: {
     authorized({ req, token }) {
-      console.log("Middleware check:", token ? "✅ Authenticated" : "❌ Not authenticated");
+      const { pathname } = req.nextUrl;
+
+      // Allow the auth pages to load without redirecting
+      if (pathname.startsWith("/auth")) return true;
+
+      // For all protected routes, require auth
       return !!token;
     },
   },
 });
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/projects/:path*", "/documents/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/projects/:path*",
+    "/documents/:path*",
+  ],
 };
