@@ -1,9 +1,23 @@
+// src/app/api/projects/ask/route.js
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+/**
+ * Normalizes text for matching file names / user question
+ */
+function normalize(str = "") {
+  return String(str || "")
+    .toLowerCase()
+    .normalize("NFKD") // fold accents
+    .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .replace(/[^a-z0-9\s.-]/g, " ") // keep alphanum, dot, dash
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export async function POST(req) {
   try {
@@ -30,20 +44,20 @@ export async function POST(req) {
       where: { projectId },
       orderBy: { createdAt: "desc" },
     });
-    
+
     if (!conv) {
-        const user = await prisma.user.findUnique({
-          where: { email: session.user.email },
-          select: { id: true }
-        });
-      
-        conv = await prisma.projectConversation.create({
-          data: {
-            projectId,
-            userId: user.id,   // required by Prisma schema
-          },
-        });
-      }
+      const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+
+      conv = await prisma.projectConversation.create({
+        data: {
+          projectId,
+          userId: user.id,
+        },
+      });
+    }
 
     // 2) Insert user message (pending)
     const userMsg = await prisma.projectMessage.create({
@@ -55,24 +69,89 @@ export async function POST(req) {
       },
     });
 
-    // 3) Load ALL project documents (no selected filter)
-    const docs = await prisma.document.findMany({
-      where: { projectId },
+    // 🟡 Debug: selected vs unselected docs for mention detection
+    const selectedDocsRaw = await prisma.document.findMany({
+      where: { projectId, selected: true },
+      select: { id: true, filename: true },
     });
 
-    if (!docs.length) {
-      // mark user message done and return friendly text
+    const unselectedDocsRaw = await prisma.document.findMany({
+      where: { projectId, selected: false },
+      select: { id: true, filename: true },
+    });
+
+    console.log("📄 Selected documents:", selectedDocsRaw);
+    console.log("❌ Unselected documents:", unselectedDocsRaw);
+
+    const q = normalize(question);
+
+    // 1️⃣ Case: User explicitly says "unselected document"
+    if (q.includes("unselected document")) {
+      // mark user message done
       await prisma.projectMessage.update({
         where: { id: userMsg.id },
         data: { status: "done" },
       });
       return NextResponse.json({
         success: true,
-        answer: "This project has no documents yet.",
+        answer: "The document is unselected or does not exist, so I cannot answer that.",
       });
     }
 
-    // 4) Load all chunks for those documents
+    // 2️⃣ Extract names of unselected + selected docs mentioned in the question
+    const mentionedUnselected = [];
+    const mentionedSelected = [];
+
+    for (const ud of unselectedDocsRaw) {
+      if (q.includes(normalize(ud.filename))) {
+        mentionedUnselected.push(ud.filename);
+      }
+    }
+
+    for (const sd of selectedDocsRaw) {
+      if (q.includes(normalize(sd.filename))) {
+        mentionedSelected.push(sd.filename);
+      }
+    }
+
+    // 3️⃣ If user mentions ONLY unselected docs → block
+    if (mentionedUnselected.length > 0 && mentionedSelected.length === 0) {
+      // mark user message done
+      await prisma.projectMessage.update({
+        where: { id: userMsg.id },
+        data: { status: "done" },
+      });
+
+      if (mentionedUnselected.length === 1) {
+        return NextResponse.json({
+          success: true,
+          answer: `The document "${mentionedUnselected[0]}" is unselected, so I cannot answer that.`,
+        });
+      } else {
+        return NextResponse.json({
+          success: true,
+          answer: "The document is unselected or does not exist, so I cannot answer that.",
+        });
+      }
+    }
+
+    // 4) Load selected documents only (enforce selected filter)
+    const docs = await prisma.document.findMany({
+      where: { projectId, selected: true },
+    });
+
+    if (!docs.length) {
+      await prisma.projectMessage.update({
+        where: { id: userMsg.id },
+        data: { status: "done" },
+      });
+      return NextResponse.json({
+        success: true,
+        answer: "No documents found in this project.",
+      });
+    }
+
+    // 5) Load all chunks for selected documents
     const docIds = docs.map((d) => d.id);
     const chunks = await prisma.chunk.findMany({
       where: { documentId: { in: docIds } },
@@ -85,14 +164,14 @@ export async function POST(req) {
         documentId: c.documentId,
         documentName: doc?.filename || "untitled",
         chunkIndex: c.chunkIndex,
-        text: c.summary || c.text || "",
+        text:  c.text || c.summary || "",
         docSummary: doc?.summary || "",
-        embedding: c.embedding, // Prisma Json field; either array or null
+        embedding: c.embedding || null,
       };
     });
 
-    // 5) Missing embeddings
-    const missing = allChunks.filter((c) => !c.embedding && (c.text || "").trim().length > 0);
+    // 6) Missing embeddings
+    const missing = allChunks.filter((c) => !c.embedding && String(c.text || "").trim().length > 0);
 
     // If lots missing, warm up in background and inform user
     if (missing.length > 10) {
@@ -101,7 +180,7 @@ export async function POST(req) {
           for (const chunk of missing) {
             const embRes = await openai.embeddings.create({
               model: "text-embedding-3-small",
-              input: chunk.text.slice(0, 8000),
+              input: String(chunk.text).slice(0, 8000),
             });
             const emb = embRes.data[0].embedding;
             await prisma.chunk.update({
@@ -115,6 +194,12 @@ export async function POST(req) {
         }
       })();
 
+      // mark user message done
+      await prisma.projectMessage.update({
+        where: { id: userMsg.id },
+        data: { status: "done" },
+      });
+
       return NextResponse.json({
         success: true,
         answer:
@@ -122,12 +207,12 @@ export async function POST(req) {
       });
     }
 
-    // 6) Inline embed small missing counts (≤10)
+    // 7) Inline embed small missing counts (≤10)
     if (missing.length > 0) {
       for (const chunk of missing) {
         const embRes = await openai.embeddings.create({
           model: "text-embedding-3-small",
-          input: chunk.text.slice(0, 8000),
+          input: String(chunk.text).slice(0, 8000),
         });
         const emb = embRes.data[0].embedding;
         await prisma.chunk.update({
@@ -138,14 +223,14 @@ export async function POST(req) {
       }
     }
 
-    // 7) Embed question
+    // 8) Embed question
     const qEmb = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: question,
     });
     const queryEmbedding = qEmb.data[0].embedding;
 
-    // 8) Similarity (cosine)
+    // 9) Similarity (cosine)
     const cosineSim = (a, b) => {
       const dot = a.reduce((s, x, i) => s + x * b[i], 0);
       const normA = Math.sqrt(a.reduce((s, x) => s + x * x, 0));
@@ -161,7 +246,7 @@ export async function POST(req) {
 
     const selected = scored.slice(0, Math.min(8, scored.length));
 
-    // 9) Build context
+    // 10) Build context grouped by document
     const grouped = selected.reduce((acc, s) => {
       acc[s.documentName] = acc[s.documentName] || [];
       acc[s.documentName].push(s);
@@ -172,9 +257,7 @@ export async function POST(req) {
       const first = chunks[0];
       const docSummary = first.docSummary ? `Summary: ${first.docSummary}` : "";
       const chunkTexts = chunks
-        .map(
-          (s) => `- (Chunk ${s.chunkIndex}) ${String(s.text).slice(0, 600).replace(/\n+/g, " ")}`
-        )
+        .map((s) => `- (Chunk ${s.chunkIndex}) ${String(s.text).slice(0, 600).replace(/\n+/g, " ")}`)
         .join("\n");
       return `Document: ${docName}\n${docSummary}\n${chunkTexts}`;
     });
@@ -182,8 +265,7 @@ export async function POST(req) {
     const docMeta = docs.map((d, i) => `${i + 1}. ${d.filename}`).join("\n");
     const context = `Project contains ${docs.length} documents:\n${docMeta}\n\n${contextBlocks.join("\n\n")}`;
 
-    // 10) Short-term memory: previous messages (id < userMsg.id). Prisma IDs are strings (cuid),
-    // but ordering by createdAt is safer.
+    // 11) Short-term memory: previous messages (createdAt < userMsg.createdAt)
     const prevMsgs = await prisma.projectMessage.findMany({
       where: { conversationId: conv.id, createdAt: { lt: userMsg.createdAt } },
       orderBy: { createdAt: "desc" },
@@ -194,18 +276,34 @@ export async function POST(req) {
     const systemMsg = {
       role: "system",
       content: `
-You are an expert assistant answering questions about multiple documents within a project.
-Use the provided document context and recent conversation history to stay consistent.
-If a question refers to a previous answer, continue naturally and maintain coherence.
-Respond in plain text only — absolutely no markdown, bold text, bullet points, lists, code blocks, or special formatting.
-Be concise, factual, and rely strictly on the provided context without assumptions.
+You are an expert assistant that answers questions *based on selected project documents*.
+
+You may:
+- Summarize document content
+- Explain document content
+- Compare document content
+- Generate new text (letters, emails, reports, etc.)
+  as long as the factual information used comes from the selected documents.
+
+Do NOT:
+- Use information from unselected documents.
+- Invent factual information that is not supported by the selected documents.
+
+If a user asks about an unselected document:
+"The document is unselected or does not exist, so I cannot answer that."
+
+If a factual answer cannot be found in the selected documents:
+"I cannot answer that based on the selected documents."
+
+Response format:
+- Plain text only (no markdown, no lists, no special formatting).
       `.trim(),
     };
 
     const memoryMsgs = prevMsgs.map((m) => ({ role: m.role, content: m.content }));
     const userMsgForModel = { role: "user", content: `Question: ${question}\n\nContext:\n${context}` };
 
-    // 11) GPT call
+    // 12) GPT call
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [systemMsg, ...memoryMsgs, userMsgForModel],
@@ -217,7 +315,7 @@ Be concise, factual, and rely strictly on the provided context without assumptio
       .replace(/\*/g, "")
       .trim();
 
-    // 12) Persist messages: update user -> done and insert assistant
+    // 13) Persist messages: update user -> done and insert assistant
     await prisma.projectMessage.update({
       where: { id: userMsg.id },
       data: { status: "done" },

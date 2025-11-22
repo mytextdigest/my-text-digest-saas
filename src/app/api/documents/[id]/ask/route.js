@@ -87,7 +87,7 @@ export async function POST(req, { params }) {
     const allChunks = chunks.map(c => ({
       id: c.id,
       chunkIndex: c.chunkIndex,
-      text: (c.summary || c.text || "").trim(),
+      text: c.text?.trim() || "",
       embedding: c.embedding
     }));
 
@@ -182,13 +182,23 @@ export async function POST(req, { params }) {
     const systemMsg = {
       role: "system",
       content: `
-You are an expert assistant answering questions about a single document.
-Use only the provided document context and the recent conversation history.
-If the document does not contain the full answer, summarize what *is* present.
-Do NOT guess or hallucinate unsupported facts.
-Respond in plain text only — no markdown, no lists, no bullets.
-Be concise and factual.
-`.trim()
+        You are an expert assistant answering questions about a single document.
+        You must use only the factual information contained in the provided document context.
+
+        You may:
+        - Summarize parts of the document
+        - Explain concepts from the document
+        - Rewrite or rephrase document content
+        - Generate new text (letters, emails, reports, arguments, recommendations, proposals, essays, etc.)
+          as long as all factual information comes strictly from the document context.
+
+        Rules:
+        - NEVER use information that is not present in the document context.
+        - NEVER invent facts, numbers, names, or claims.
+        - If the document does not fully answer the question, provide the closest accurate information the document contains (do not say "I don't know").
+        - Plain text only (no markdown, no bullets, no special formatting).
+        - Be concise, factual, and avoid assumptions.
+      `.trim()
     };
 
     const memoryMsgs = prevMsgs.map(m => ({
