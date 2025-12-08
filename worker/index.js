@@ -174,22 +174,33 @@ async function processEmbeddingJob(job) {
 
 
 async function processSummarizationJob(job) {
-  const { docId, filename } = job;
-  console.log(`🟩 SUMMARY JOB: ${docId}`);
+  const { docId, filename, regenerate = false } = job; 
+  // regenerate defaults to false if not provided
 
+  console.log(`🟩 SUMMARY JOB: ${docId} (regenerate = ${regenerate})`);
+
+  // Update status → summarizing
   await prisma.document.update({
     where: { id: docId },
     data: { status: "summarizing" },
   });
 
+  // Load chunks
   const chunks = await prisma.chunk.findMany({
     where: { documentId: docId },
     orderBy: { chunkIndex: "asc" },
   });
 
-  const chunkTexts = chunks.map(c => c.text);
+  // Decide which text to summarize:
+  // - Regenerate mode: Prefer existing summaries → use them as input (if available)
+  // - Normal mode: Always use raw text
+  const chunkTexts = regenerate
+    ? chunks.map(c => c.summary || c.text || "")
+    : chunks.map(c => c.text || "");
 
-  // Summaries
+  console.log(`📄 Summarizing ${chunkTexts.length} chunks (regenerate: ${regenerate})`);
+
+  // Generate per-chunk summaries
   const chunkSummaries = await summarizeChunks(chunkTexts, filename);
 
   // Save chunk summaries
@@ -203,6 +214,7 @@ async function processSummarizationJob(job) {
   // Final structured summary
   const structured = await createStructuredSummary(chunkSummaries, filename);
 
+  // Save document summary + mark ready
   await prisma.document.update({
     where: { id: docId },
     data: {
@@ -211,25 +223,55 @@ async function processSummarizationJob(job) {
     },
   });
 
-  // Notify user
+  // Load user details
   const doc = await prisma.document.findUnique({
     where: { id: docId },
     include: { user: true },
   });
 
-  if (doc?.user?.email) {
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: doc.user.email,
-      subject: "Document Fully Ready ✔",
-      html: `
-        <p>Your document <strong>${filename}</strong> has been fully processed.</p>
-        <p>High-level summary and improved chat are now available.</p>
-      `,
-    });
+  // No email? Skip
+  if (!doc?.user?.email) {
+    console.log("⚠️ No user email found, skipping notification");
+  } else {
+
+    // -------------------------------------------
+    // 📬 DIFFERENT EMAILS FOR regenerate vs normal
+    // -------------------------------------------
+
+    if (regenerate) {
+      // 🔁 REGENERATED SUMMARY
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM,
+        to: doc.user.email,
+        subject: "Your Summary Has Been Regenerated ✔",
+        html: `
+          <p>Hello,</p>
+          <p>Your document <strong>${filename}</strong> has a newly regenerated summary.</p>
+          <p>You can now review the improved structured summary in your dashboard.</p>
+          <p>— MyTextDigest</p>
+        `,
+      });
+
+      console.log(`📧 Regeneration email sent to ${doc.user.email}`);
+
+    } else {
+      // 🆕 FIRST-TIME FULL PROCESSING
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM,
+        to: doc.user.email,
+        subject: "Document Fully Processed ✔",
+        html: `
+          <p>Your document <strong>${filename}</strong> has been fully processed.</p>
+          <p>High-level summary and improved chat are now available.</p>
+          <p>— MyTextDigest</p>
+        `,
+      });
+
+      console.log(`📧 Completion email sent to ${doc.user.email}`);
+    }
   }
 
-  console.log(`✅ Summarization complete: ${docId}`);
+  console.log(`✅ Summarization complete: ${docId} (regenerate: ${regenerate})`);
 }
 
 

@@ -34,22 +34,24 @@ export async function POST(req, { params }) {
 
     const filename = doc.filename || doc.filePath.split("/").pop();
 
-    // Update status
+    // Update status → regenerating (treated like summarizing)
     await prisma.document.update({
       where: { id: documentId },
-      data: { status: "queued" },
+      data: { status: "summarizing" },
     });
 
     // SQS
     const sqs = new SQSClient({ region: process.env.AWS_REGION });
 
+    // 🔥 NEW: For regeneration, we explicitly send type: "summarize"
     const messageBody = JSON.stringify({
+      type: "summarize",      // 🟢 Worker stage 3
       docId: documentId,
       s3Key: doc.filePath,
       filename,
       projectId: doc.projectId || null,
       userId: doc.userId || null,
-      regenerate: true
+      regenerate: true        // 🟢 Worker takes special regenerate path
     });
 
     await sqs.send(
@@ -59,12 +61,12 @@ export async function POST(req, { params }) {
       })
     );
 
-    console.log(`📄 Queued regenerate-summary for document ${documentId}`);
+    console.log(`📄 Queued summary regeneration for document ${documentId}`);
 
     return NextResponse.json({
       success: true,
       id: documentId,
-      status: "queued"
+      status: "summarizing"
     });
 
   } catch (err) {

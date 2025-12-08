@@ -32,6 +32,7 @@ export async function POST(req) {
     if (!dbUser)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+    // Document created with "queued" status
     const doc = await prisma.document.create({
       data: {
         filename,
@@ -42,9 +43,12 @@ export async function POST(req) {
       },
     });
 
+    // SQS client
     const sqs = new SQSClient({ region: process.env.AWS_REGION });
 
+    // 🔥 NEW: 3-Stage Pipeline → initial job is ALWAYS "chunk"
     const messageBody = JSON.stringify({
+      type: "chunk",      // STEP 1 in pipeline
       docId: doc.id,
       s3Key,
       filename,
@@ -59,8 +63,6 @@ export async function POST(req) {
         MessageBody: messageBody,
       })
     );
-
-    // console.log(`📄 Queued document ${doc.id} for background processing`);
 
     return NextResponse.json({
       success: true,
