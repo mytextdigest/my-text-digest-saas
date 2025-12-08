@@ -19,6 +19,54 @@ function normalize(str = "") {
     .trim();
 }
 
+
+const k1 = 1.5;
+const b = 0.75;
+
+function tokenize(text) {
+  return normalize(text).split(" ").filter(w => w.length > 2);
+}
+
+function computeBM25(chunks, query) {
+  const queryTokens = tokenize(query);
+  const N = chunks.length;
+
+  // Precompute avg document length
+  const avgdl = chunks.reduce((s, c) => s + tokenize(c.text || "").length, 0) / N;
+
+  // Precompute document frequencies DF(term)
+  const df = {};
+  for (const t of queryTokens) {
+    df[t] = chunks.filter(c => tokenize(c.text || "").includes(t)).length || 0;
+  }
+
+  // IDF(term)
+  const idf = {};
+  for (const t of queryTokens) {
+    const df_t = df[t];
+    idf[t] = Math.log( (N - df_t + 0.5) / (df_t + 0.5) + 1 );
+  }
+
+  // BM25 score for each chunk
+  const scores = chunks.map(chunk => {
+    const tokens = tokenize(chunk.text || "");
+    const dl = tokens.length;
+    let score = 0;
+
+    for (const t of queryTokens) {
+      const tf = tokens.filter(x => x === t).length;
+      if (tf === 0) continue;
+
+      const denom = tf + k1 * (1 - b + b * (dl / avgdl));
+      score += idf[t] * ((tf * (k1 + 1)) / denom);
+    }
+
+    return { ...chunk, score };
+  });
+
+  return scores.sort((a, b) => b.score - a.score);
+}
+
 export async function POST(req) {
   try {
     const session = await getServerSession();
@@ -171,41 +219,86 @@ export async function POST(req) {
     });
 
     // 6) Missing embeddings
-    const missing = allChunks.filter((c) => !c.embedding && String(c.text || "").trim().length > 0);
 
-    // If lots missing, warm up in background and inform user
-    if (missing.length > 10) {
-      (async () => {
-        try {
-          for (const chunk of missing) {
-            const embRes = await openai.embeddings.create({
-              model: "text-embedding-3-small",
-              input: String(chunk.text).slice(0, 8000),
-            });
-            const emb = embRes.data[0].embedding;
-            await prisma.chunk.update({
-              where: { id: chunk.id },
-              data: { embedding: emb },
-            });
-          }
-          console.log(`✅ Background embedding warm-up complete for project ${projectId}`);
-        } catch (bgErr) {
-          console.error("Background embedding generation failed:", bgErr);
-        }
-      })();
 
-      // mark user message done
+    const docStatuses = docs.map(d => d.status);
+
+    const allChunkedOrExtracting = docStatuses.every(s =>
+      s === "chunked" || s === "extracting" || s === "pending"
+    );
+
+    const hasEmbeddingsReady = docStatuses.some(s =>
+      s === "embedded" || s === "summarizing" || s === "ready"
+    );
+
+    console.log("📊 Document statuses:", docStatuses);
+
+    if (allChunkedOrExtracting && !hasEmbeddingsReady) {
+      console.log("🟦 BASIC CHAT (BM25): embeddings not ready");
+
+      // BM25 scoring
+      const scored = computeBM25(allChunks, question).slice(0, 8);
+
+      const contextBlocks = scored
+        .map(s => `Document: ${s.documentName}\n- ${s.text.slice(0, 600).replace(/\n+/g, " ")}`)
+        .join("\n\n");
+
+      const systemMsg = {
+        role: "system",
+        content: `
+You are answering based on extracted text only.
+Embeddings are not ready yet.
+Use ONLY the provided text. Do not invent facts.
+BM25 retrieval has selected the most relevant chunks.
+        `.trim(),
+      };
+
+      // Load previous messages
+      const prevMsgs = await prisma.projectMessage.findMany({
+        where: { conversationId: conv.id, createdAt: { lt: userMsg.createdAt } },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+      });
+      prevMsgs.reverse();
+
+      const messages = [
+        systemMsg,
+        ...prevMsgs.map(m => ({ role: m.role, content: m.content })),
+        {
+          role: "user",
+          content: `Question: ${question}\n\nContext:\n${contextBlocks}`,
+        },
+      ];
+
+      console.log("🟦 Sending BM25 mode request to GPT");
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.3,
+        max_tokens: 800,
+      });
+
+      const assistantText = completion?.choices?.[0]?.message?.content?.trim() || "";
+
+      // Store user & assistant messages
       await prisma.projectMessage.update({
         where: { id: userMsg.id },
         data: { status: "done" },
       });
 
-      return NextResponse.json({
-        success: true,
-        answer:
-          "Preparing your project for the first time. I'm generating data in the background — please try again in a minute.",
+      await prisma.projectMessage.create({
+        data: {
+          conversationId: conv.id,
+          role: "assistant",
+          content: assistantText,
+          status: "done",
+        },
       });
+
+      return NextResponse.json({ success: true, answer: assistantText });
     }
+
 
     // 7) Inline embed small missing counts (≤10)
     if (missing.length > 0) {

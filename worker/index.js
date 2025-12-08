@@ -1,4 +1,4 @@
-import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from "@aws-sdk/client-sqs";
+import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { extractPdfText } from "./extractPdf.js";
 import mammoth from "mammoth";
@@ -7,8 +7,6 @@ import OpenAI from "openai";
 import nodemailer from "nodemailer";
 import { createStructuredSummary, summarizeChunks } from "./summarize.js";
 
-
-// ENVIRONMENT VARS
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -23,6 +21,7 @@ async function streamToBuffer(stream) {
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
 }
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -31,88 +30,33 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-
 function chunkText(text, size = 2000) {
   const chunks = [];
   for (let i = 0; i < text.length; i += size)
     chunks.push(text.slice(i, i + size));
+
   return chunks;
 }
 
-async function processJob(job) {
-  const { docId, s3Key, filename, regenerate } = job;
-  console.log(`🟡 Processing job: ${docId} (${filename})`);
 
-  if (regenerate === true) {
-    console.log(`🔁 Regenerating summary for ${docId}...`);
+async function processChunkJob(job) {
+  const { docId, s3Key, filename } = job;
+  console.log(`🟦 CHUNK JOB: ${docId}`);
 
-    // Set status → summarizing
-    await prisma.document.update({
-      where: { id: docId },
-      data: { status: "summarizing" },
-    });
-
-    // Load existing chunks from DB
-    const existingChunks = await prisma.chunk.findMany({
-      where: { documentId: docId },
-      orderBy: { chunkIndex: "asc" },
-      select: { chunkIndex: true, summary: true, text: true },
-    });
-
-    // Use summary first if exists, else raw text
-    const chunkTexts = existingChunks.map(c => c.summary || c.text || "");
-
-    console.log(`📄 Using ${chunkTexts.length} existing chunks for regeneration`);
-
-    // Run the same summarize functions
-    const chunkSummaries = await summarizeChunks(chunkTexts, filename);
-    const structured = await createStructuredSummary(chunkSummaries, filename);
-
-    // Save back chunk summaries
-    for (let i = 0; i < chunkSummaries.length; i++) {
-      await prisma.chunk.updateMany({
-        where: { documentId: docId, chunkIndex: i },
-        data: { summary: chunkSummaries[i] },
-      });
-    }
-
-    // Save final structured summary
-    await prisma.document.update({
-      where: { id: docId },
-      data: {
-        summary: JSON.stringify(structured),
-        status: "ready",
-      },
-    });
-
-    console.log(`✅ Regenerate summary complete: ${docId}`);
-
-    return; 
-  }
-
-  //
-  // 1. Update status → extracting
-  //
+  // 1. Set status
   await prisma.document.update({
     where: { id: docId },
     data: { status: "extracting" },
   });
 
-  //
-  // 2. Download file from S3
-  //
+  // 2. Download file
   const object = await s3.send(
-    new GetObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: s3Key,
-    })
+    new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key })
   );
 
   const buffer = await streamToBuffer(object.Body);
 
-  //
   // 3. Extract text
-  //
   let text = "";
   if (filename.endsWith(".pdf")) {
     text = await extractPdfText(buffer);
@@ -121,8 +65,6 @@ async function processJob(job) {
   } else if (filename.endsWith(".docx")) {
     const result = await mammoth.extractRawText({ buffer });
     text = result.value;
-  } else {
-    throw new Error("Unsupported file type");
   }
 
   await prisma.document.update({
@@ -130,9 +72,7 @@ async function processJob(job) {
     data: { content: text },
   });
 
-  //
   // 4. Chunk text
-  //
   const chunks = chunkText(text);
 
   await prisma.chunk.createMany({
@@ -143,41 +83,116 @@ async function processJob(job) {
     })),
   });
 
-  //
-  // 5. Generate embeddings (sequential is okay)
-  //
+  // 5. Status → chunked
+  await prisma.document.update({
+    where: { id: docId },
+    data: { status: "chunked" },
+  });
+
+  // 6. Notify user (basic chat ready)
+  const doc = await prisma.document.findUnique({
+    where: { id: docId },
+    include: { user: true },
+  });
+
+  if (doc?.user?.email) {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: doc.user.email,
+      subject: "Chat is Ready",
+      html: `
+        <p>Your document <strong>${filename}</strong> is chunked.</p>
+        <p>You can now start basic chat while embeddings are generated.</p>
+      `,
+    });
+  }
+
+  // 7. Enqueue embedding job
+  await sqs.send(
+    new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: JSON.stringify({
+        type: "embed",
+        docId,
+        filename,
+      }),
+    })
+  );
+
+  console.log(`✅ Chunk job complete: ${docId}`);
+}
+
+
+
+async function processEmbeddingJob(job) {
+  const { docId, filename } = job;
+  console.log(`🟧 EMBEDDING JOB: ${docId}`);
+
   await prisma.document.update({
     where: { id: docId },
     data: { status: "embedding" },
   });
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
+  const chunks = await prisma.chunk.findMany({
+    where: { documentId: docId },
+    orderBy: { chunkIndex: "asc" },
+  });
 
+  // Loop through & create embeddings
+  for (const chunk of chunks) {
     const emb = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: chunk.slice(0, 8000),
+      input: chunk.text.slice(0, 8000),
     });
 
-    await prisma.chunk.updateMany({
-      where: { documentId: docId, chunkIndex: i },
+    await prisma.chunk.update({
+      where: { id: chunk.id },
       data: { embedding: emb.data[0].embedding },
     });
   }
 
-  //
-  // 6. Summaries (PARALLEL, FAST, like Desktop App)
-  //
+  // Mark as embedded
+  await prisma.document.update({
+    where: { id: docId },
+    data: { status: "embedded" },
+  });
+
+  // Enqueue summarization
+  await sqs.send(
+    new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: JSON.stringify({
+        type: "summarize",
+        docId,
+        filename,
+      }),
+    })
+  );
+
+  console.log(`✅ Embedding complete: ${docId}`);
+}
+
+
+async function processSummarizationJob(job) {
+  const { docId, filename } = job;
+  console.log(`🟩 SUMMARY JOB: ${docId}`);
+
   await prisma.document.update({
     where: { id: docId },
     data: { status: "summarizing" },
   });
 
-  const chunkSummaries = await summarizeChunks(chunks, filename);
+  const chunks = await prisma.chunk.findMany({
+    where: { documentId: docId },
+    orderBy: { chunkIndex: "asc" },
+  });
 
-  //
-  // 7. Save per-chunk summaries
-  //
+  const chunkTexts = chunks.map(c => c.text);
+
+  // Summaries
+  const chunkSummaries = await summarizeChunks(chunkTexts, filename);
+
+  // Save chunk summaries
   for (let i = 0; i < chunkSummaries.length; i++) {
     await prisma.chunk.updateMany({
       where: { documentId: docId, chunkIndex: i },
@@ -185,9 +200,7 @@ async function processJob(job) {
     });
   }
 
-  //
-  // 8. Final structured summary
-  //
+  // Final structured summary
   const structured = await createStructuredSummary(chunkSummaries, filename);
 
   await prisma.document.update({
@@ -198,52 +211,49 @@ async function processJob(job) {
     },
   });
 
-  console.log(`✅ Job complete: ${docId}`);
+  // Notify user
+  const doc = await prisma.document.findUnique({
+    where: { id: docId },
+    include: { user: true },
+  });
 
-  //
-  // 9. EMAIL NOTIFICATION
-  //
-  try {
-    const doc = await prisma.document.findUnique({
-      where: { id: docId },
-      include: { user: true },
-    });
-
-    const userEmail = doc?.user?.email;
-    if (!userEmail) {
-      console.log("⚠️ No user email found, skipping notification");
-      return;
-    }
-
+  if (doc?.user?.email) {
     await transporter.sendMail({
       from: process.env.EMAIL_FROM,
-      to: userEmail,
-      subject: "Your Document Is Ready ✔",
-      text: `Your document "${filename}" has been successfully processed.`,
+      to: doc.user.email,
+      subject: "Document Fully Ready ✔",
       html: `
-        <p>Hello,</p>
-        <p>Your document <strong>${filename}</strong> has been processed and is now ready in your dashboard.</p>
-        <p>— MyTextDigest</p>
+        <p>Your document <strong>${filename}</strong> has been fully processed.</p>
+        <p>High-level summary and improved chat are now available.</p>
       `,
     });
-
-    console.log(`📧 Email sent to: ${userEmail}`);
-  } catch (err) {
-    console.error("❌ Email sending failed:", err);
   }
+
+  console.log(`✅ Summarization complete: ${docId}`);
 }
 
-// Worker infinite loop
+
+async function processJob(job) {
+  if (job.type === "chunk") return processChunkJob(job);
+  if (job.type === "embed") return processEmbeddingJob(job);
+  if (job.type === "summarize") return processSummarizationJob(job);
+
+  throw new Error("Unknown job type: " + job.type);
+}
+
+
 async function mainLoop() {
   console.log("Worker started. Waiting for jobs...");
 
   while (true) {
-    const res = await sqs.send(new ReceiveMessageCommand({
-      QueueUrl: QUEUE_URL,
-      MaxNumberOfMessages: 2,
-      WaitTimeSeconds: 20,  // Long polling
-      VisibilityTimeout: 600,
-    }));
+    const res = await sqs.send(
+      new ReceiveMessageCommand({
+        QueueUrl: QUEUE_URL,
+        MaxNumberOfMessages: 1,
+        WaitTimeSeconds: 20,
+        VisibilityTimeout: 600,
+      })
+    );
 
     if (!res.Messages || res.Messages.length === 0) continue;
 
@@ -253,13 +263,14 @@ async function mainLoop() {
     try {
       await processJob(body);
 
-      await sqs.send(new DeleteMessageCommand({
-        QueueUrl: QUEUE_URL,
-        ReceiptHandle: msg.ReceiptHandle,
-      }));
+      await sqs.send(
+        new DeleteMessageCommand({
+          QueueUrl: QUEUE_URL,
+          ReceiptHandle: msg.ReceiptHandle,
+        })
+      );
     } catch (err) {
-      console.error("Error processing job:", err);
-      // SQS will retry after visibility timeout
+      console.error("❌ Worker error:", err);
     }
   }
 }
