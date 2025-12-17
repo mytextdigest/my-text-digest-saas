@@ -48,6 +48,8 @@ function ProjectPageInner() {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
+
+      console.log("fetch project: ", res)
   
       if (!res.ok) {
         console.error('Failed to fetch project:', res.status);
@@ -55,6 +57,7 @@ function ProjectPageInner() {
       }
   
       const projectData = await res.json();
+      console.log("Project Data: ", projectData)
       setProject(projectData);
     } catch (err) {
       console.error('Failed to load project:', err);

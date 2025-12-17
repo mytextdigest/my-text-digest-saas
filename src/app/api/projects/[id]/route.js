@@ -9,7 +9,11 @@ export async function GET(req, { params }) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const projectId = params.id;
+  const { id: projectId } = await params;
+
+  console.log("project id: ", projectId)
+  console.log("Params ", params)
+
   if (!projectId) return NextResponse.json(null);
 
   const project = await prisma.project.findFirst({
