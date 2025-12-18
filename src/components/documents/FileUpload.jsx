@@ -46,7 +46,8 @@ const FileUpload = ({
         name: file.name,
         size: file.size,
         errors,
-        status: errors.length > 0 ? 'error' : 'pending'
+        status: errors.length > 0 ? 'error' : 'pending',
+        visibility: null,
       };
     });
     
@@ -86,6 +87,19 @@ const FileUpload = ({
   const uploadFiles = async () => {
     const validFiles = files.filter(f => f.status === 'pending');
     if (validFiles.length === 0) return;
+
+    // block upload if any file has no visibility
+    const missingVisibility = validFiles.some(f => !f.visibility);
+    if (missingVisibility) {
+      setFiles(prev =>
+        prev.map(f =>
+          f.status === 'pending' && !f.visibility
+            ? { ...f, errors: ['Visibility is required'] }
+            : f
+        )
+      );
+      return;
+    }
   
     setUploading(true);
   
@@ -201,8 +215,52 @@ const FileUpload = ({
             <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">
               Selected Files ({files.length})
             </h4>
+
+            {/* Batch Visibility Controls */}
+            <div className="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+              <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">
+                Apply to all:
+              </span>
+
+              <button
+                onClick={() =>
+                  setFiles(prev => prev.map(f => ({ ...f, visibility: null })))
+                }
+                className="px-3 py-1.5 text-xs rounded-md border border-gray-300 dark:border-gray-600
+                          bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300
+                          hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+              >
+                Clear
+              </button>
+
+              <button
+                onClick={() =>
+                  setFiles(prev => prev.map(f => ({ ...f, visibility: 'private' })))
+                }
+                className="px-3 py-1.5 text-xs rounded-md border
+                          border-yellow-300 dark:border-yellow-700
+                          bg-yellow-50 dark:bg-yellow-900/30
+                          text-yellow-800 dark:text-yellow-300
+                          hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition"
+              >
+                Private
+              </button>
+
+              <button
+                onClick={() =>
+                  setFiles(prev => prev.map(f => ({ ...f, visibility: 'public' })))
+                }
+                className="px-3 py-1.5 text-xs rounded-md border
+                          border-green-300 dark:border-green-700
+                          bg-green-50 dark:bg-green-900/30
+                          text-green-800 dark:text-green-300
+                          hover:bg-green-100 dark:hover:bg-green-900/50 transition"
+              >
+                Public
+              </button>
+            </div>
             
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-40 overflow-y-auto">
               {files.map((fileItem) => (
                 <motion.div
                   key={fileItem.id}
@@ -234,12 +292,53 @@ const FileUpload = ({
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         {formatFileSize(fileItem.size)}
                       </p>
+
+                      {/* Visibility selector */}
+                      {fileItem.status === 'pending' && (
+                        <div className="flex items-center gap-2 mt-2">
+                          {['private', 'public'].map(v => (
+                            <button
+                              key={v}
+                              onClick={() =>
+                                setFiles(prev =>
+                                  prev.map(f =>
+                                    f.id === fileItem.id ? { ...f, visibility: v } : f
+                                  )
+                                )
+                              }
+                              className={cn(
+                                "px-3 py-1 text-xs rounded-md border",
+                                fileItem.visibility === v
+                                  ? v === 'private'
+                                    ? "bg-yellow-100 text-yellow-700 border-yellow-300"
+                                    : "bg-green-100 text-green-700 border-green-300"
+                                  : "bg-white dark:bg-gray-800 border-gray-300"
+                              )}
+                            >
+                              {v === 'private' ? 'Private' : 'Public'}
+                            </button>
+                          ))}
+                          {!fileItem.visibility && (
+                            <span className="text-xs text-error-600">
+                              Required
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {fileItem.errors?.length > 0 && (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-error-600">
+                          <AlertCircle className="w-3 h-3" />
+                          <span>{fileItem.errors[0]}</span>
+                        </div>
+                      )}
                       
-                      {fileItem.errors.length > 0 && (
+                      {/* {fileItem.errors.length > 0 && (
                         <p className="text-xs text-error-600 mt-1">
+                          <AlertCircle className="w-3 h-3" />
                           {fileItem.errors[0]}
                         </p>
-                      )}
+                      )} */}
                       
                       {uploading && uploadProgress[fileItem.id] !== undefined && (
                         <div className="mt-2">
@@ -270,6 +369,26 @@ const FileUpload = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Visibility Explanation */}
+      <div className="mt-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
+        <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+          Visibility options
+        </h5>
+
+        <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1 leading-relaxed">
+          <p>
+            <strong className="text-gray-900 dark:text-gray-100">Private:</strong>{" "}
+            Best for personal or sensitive documents. Uses smaller chunks for higher
+            accuracy and better answers.
+          </p>
+          <p>
+            <strong className="text-gray-900 dark:text-gray-100">Public:</strong>{" "}
+            Faster processing using larger chunks. Suitable for non-sensitive,
+            shareable documents.
+          </p>
+        </div>
+      </div>
 
       {/* Actions */}
       {files.length > 0 && (

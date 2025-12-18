@@ -48,6 +48,22 @@ const DocumentCard = ({
     }
   };
 
+
+  const getVisibilityBadge = (visibility) => {
+    if (visibility === "public") {
+      return {
+        label: "Public",
+        className: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+      };
+    }
+    return {
+      label: "Private",
+      className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300"
+    };
+  };
+
+  const visibilityBadge = getVisibilityBadge(document.visibility);
+
   if (viewMode === 'list') {
     return (
       <motion.div
@@ -74,6 +90,13 @@ const DocumentCard = ({
             <div className="flex items-center mt-1 text-xs text-gray-500 dark:text-gray-300 overflow-hidden">
               <Calendar className="w-3 h-3 mr-1 flex-shrink-0" />
               <span className="truncate flex-shrink">{formatDate(created_at)}</span>
+              {/* Visibility Badge */}
+              <span className={cn(
+                "text-[10px] px-2 py-0.5 rounded-full font-medium",
+                visibilityBadge.className
+              )}>
+                {visibilityBadge.label}
+              </span>
               {file_size && (
                 <>
                   <span className="mx-2 flex-shrink-0">•</span>
@@ -157,6 +180,13 @@ const DocumentCard = ({
                 <p className="text-xs text-gray-500 dark:text-gray-300 mt-1 truncate-responsive">
                   {formatDate(created_at)}
                 </p>
+
+                <span className={cn(
+                  "text-[10px] px-2 py-0.5 rounded-full font-medium",
+                  visibilityBadge.className
+                )}>
+                  {visibilityBadge.label}
+                </span>
               </div>
             </div>
             

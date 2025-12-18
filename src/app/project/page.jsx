@@ -82,6 +82,7 @@ function ProjectPageInner() {
       }
   
       const data = await res.json();
+      console.log("Check visivility", data)
 
       setDocs(data);
 
@@ -106,6 +107,7 @@ function ProjectPageInner() {
     });
   
     const { url, fields, key } = await presignRes.json();
+    const visibility = file?.visibility || "private";
   
     // 2️⃣ Upload file directly to S3
     const formData = new FormData();
@@ -128,6 +130,7 @@ function ProjectPageInner() {
     const ingestForm = new FormData();
     ingestForm.append("s3Key", key);
     ingestForm.append("projectId", projectId);
+    ingestForm.append("visibility", visibility);
 
     console.log("Uploading file:", { name: file.name, type: file.type, userId });
 

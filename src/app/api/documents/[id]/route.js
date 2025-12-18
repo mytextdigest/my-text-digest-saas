@@ -37,7 +37,8 @@ export async function DELETE(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   
-    const id = params.id;
+    const { id: id } = await params;
+    
     if (!id) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
   
     const doc = await prisma.document.findFirst({

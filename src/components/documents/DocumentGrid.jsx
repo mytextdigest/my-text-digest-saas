@@ -38,6 +38,7 @@ const DocumentGrid = ({
   const [sortOrder, setSortOrder] = useState('desc');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [visibilityFilter, setVisibilityFilter] = useState('all');
 
   // Filter and sort documents
   const filteredDocuments = documents
@@ -47,8 +48,11 @@ const DocumentGrid = ({
       
       const matchesFilter = filterType === 'all' || 
                            doc.filename.toLowerCase().endsWith(`.${filterType}`);
+
+      const matchesVisibility =
+                           visibilityFilter === "all" || doc.visibility === visibilityFilter;
       
-      return matchesSearch && matchesFilter;
+      return matchesSearch && matchesFilter && matchesVisibility;
     })
     .sort((a, b) => {
       let comparison = 0;
@@ -176,6 +180,17 @@ const DocumentGrid = ({
               <option value="docx">Word</option>
               <option value="txt">Text</option>
             </select>
+
+            <select
+              value={visibilityFilter}
+              onChange={(e) => setVisibilityFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 w-full sm:w-auto"
+            >
+              <option value="all">All Visibility</option>
+              <option value="private">Private</option>
+              <option value="public">Public</option>
+            </select>
+            
           </div>
 
           {/* Upload Button - Hidden on starred tab */}
