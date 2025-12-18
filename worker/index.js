@@ -40,7 +40,7 @@ function chunkText(text, size = 2000) {
 
 
 async function processChunkJob(job) {
-  const { docId, s3Key, filename } = job;
+  const { docId, s3Key, filename, visibility="private" } = job;
   console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
 
   const chunkSize = visibility === "public" ? 8000 : 2000;
