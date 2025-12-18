@@ -17,9 +17,15 @@ export async function POST(req) {
     const formData = await req.formData();
     const projectId = formData.get("projectId");
     const s3Key = formData.get("s3Key");
+    const visibility = formData.get("visibility") || "private";
+
 
     if (!projectId || !s3Key) {
       return NextResponse.json({ error: "Missing projectId or s3Key" }, { status: 400 });
+    }
+
+    if (!["public", "private"].includes(visibility)) {
+      return NextResponse.json({ error: "Invalid visibility" }, { status: 400 });
     }
 
     const filename = s3Key.split("/").pop();
@@ -38,6 +44,7 @@ export async function POST(req) {
         filename,
         filePath: s3Key,
         status: "queued",
+        visibility,
         project: { connect: { id: projectId } },
         user: { connect: { id: dbUser.id } },
       },
@@ -54,6 +61,7 @@ export async function POST(req) {
       filename,
       projectId,
       userId: dbUser.id,
+      visibility,
       regenerate: false
     });
 

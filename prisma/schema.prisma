@@ -60,6 +60,9 @@ model Document {
   userId        String
   projectId     String?
   selected      Int            @default(1)
+
+  visibility    String         @default("private")
+  
   chunks        Chunk[]
   conversations Conversation[]
   project       Project?       @relation(fields: [projectId], references: [id])

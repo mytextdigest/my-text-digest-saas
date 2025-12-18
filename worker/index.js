@@ -41,7 +41,9 @@ function chunkText(text, size = 2000) {
 
 async function processChunkJob(job) {
   const { docId, s3Key, filename } = job;
-  console.log(`🟦 CHUNK JOB: ${docId}`);
+  console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
+
+  const chunkSize = visibility === "public" ? 8000 : 2000;
 
   // 1. Set status
   await prisma.document.update({
@@ -73,7 +75,7 @@ async function processChunkJob(job) {
   });
 
   // 4. Chunk text
-  const chunks = chunkText(text);
+  const chunks = chunkText(text, chunkSize);
 
   await prisma.chunk.createMany({
     data: chunks.map((c, i) => ({
