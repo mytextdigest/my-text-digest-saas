@@ -172,16 +172,20 @@ function DocumentContent() {
     (async () => {
       try {
         // start / reuse conversation
-        const res = await fetch(`/api/documents/${doc.id}/start-conversation`, {
+
+        const startConvDocId = doc.id
+        const res = await fetch(`/api/documents/${startConvDocId}/start-conversation`, {
           method: "POST",
           credentials: "include",
         }).then(r => r.json());
   
         if (res?.success) {
           setConversationId(res.conversationId);
+
+          const convId = res.conversationId
   
           // load previous messages
-          const msgsRes = await fetch(`/api/documents/messages/${res.conversationId}`, {
+          const msgsRes = await fetch(`/api/documents/messages/${convId}`, {
             method: "GET",
             credentials: "include"
           }).then(r => r.json());

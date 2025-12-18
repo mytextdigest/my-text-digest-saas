@@ -16,6 +16,8 @@ const FileUpload = ({
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
+  const [finalizing, setFinalizing] = useState({});
+
   const fileInputRef = useRef(null);
 
   const validateFile = (file) => {
@@ -84,45 +86,52 @@ const FileUpload = ({
   const uploadFiles = async () => {
     const validFiles = files.filter(f => f.status === 'pending');
     if (validFiles.length === 0) return;
-
+  
     setUploading(true);
-    
+  
     for (const fileItem of validFiles) {
       try {
+        // Start progress
         setUploadProgress(prev => ({ ...prev, [fileItem.id]: 0 }));
-        
-        // Simulate upload progress
-        for (let progress = 0; progress <= 100; progress += 10) {
+  
+        // Simulated progress up to 90%
+        for (let progress = 0; progress <= 90; progress += 10) {
           setUploadProgress(prev => ({ ...prev, [fileItem.id]: progress }));
           await new Promise(resolve => setTimeout(resolve, 100));
         }
-        
-        // Convert file to buffer for electron
-        // const arrayBuffer = await fileItem.file.arrayBuffer();
-        // const buffer = Array.from(new Uint8Array(arrayBuffer));
-        
-        // await onUpload(fileItem.file.name, buffer);
+  
+        // Actual upload (network / backend)
         await onUpload(fileItem.file);
-        
-        setFiles(prev => prev.map(f => 
-          f.id === fileItem.id ? { ...f, status: 'success' } : f
-        ));
-        
+  
+        // Mark as fully complete only AFTER upload finishes
+        setUploadProgress(prev => ({ ...prev, [fileItem.id]: 100 }));
+  
+        setFiles(prev =>
+          prev.map(f =>
+            f.id === fileItem.id ? { ...f, status: 'success' } : f
+          )
+        );
       } catch (error) {
         console.error('Upload failed:', error);
-        setFiles(prev => prev.map(f => 
-          f.id === fileItem.id ? { ...f, status: 'error', errors: ['Upload failed'] } : f
-        ));
+  
+        setFiles(prev =>
+          prev.map(f =>
+            f.id === fileItem.id
+              ? { ...f, status: 'error', errors: ['Upload failed'] }
+              : f
+          )
+        );
       }
     }
-    
+  
     setUploading(false);
-    
+  
     // Close modal after successful uploads
     setTimeout(() => {
       onClose();
     }, 1000);
   };
+  
 
   const validFiles = files.filter(f => f.status === 'pending').length;
   const hasErrors = files.some(f => f.errors.length > 0);
