@@ -17,6 +17,7 @@ const FileUpload = ({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [finalizing, setFinalizing] = useState({});
+  const [showVisibilityInfo, setShowVisibilityInfo] = useState(true);
 
   const fileInputRef = useRef(null);
 
@@ -371,7 +372,7 @@ const FileUpload = ({
       </AnimatePresence>
 
       {/* Visibility Explanation */}
-      <div className="mt-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
+      {/* <div className="mt-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4">
         <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
           Visibility options
         </h5>
@@ -388,6 +389,40 @@ const FileUpload = ({
             shareable documents.
           </p>
         </div>
+      </div> */}
+
+      {/* Visibility Explanation */}
+      <div className="mt-4">
+        <button
+          onClick={() => setShowVisibilityInfo(v => !v)}
+          className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800
+                    dark:hover:text-gray-200 underline underline-offset-2"
+        >
+          {showVisibilityInfo ? "Hide visibility details" : "What does visibility mean?"}
+        </button>
+
+        <AnimatePresence>
+          {showVisibilityInfo && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-2 rounded-md border border-gray-200 dark:border-gray-700
+                        bg-gray-50 dark:bg-gray-900/40 p-3"
+            >
+              <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1 leading-relaxed">
+                <p>
+                  <strong className="text-gray-900 dark:text-gray-100">Private:</strong>{" "}
+                  Best for personal or sensitive documents, higher accuracy and better answers.
+                </p>
+                <p>
+                  <strong className="text-gray-900 dark:text-gray-100">Public:</strong>{" "}
+                  Faster processing. Suitable for non-sensitive, shareable documents.
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Actions */}
