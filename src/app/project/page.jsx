@@ -94,7 +94,7 @@ function ProjectPageInner() {
     }
   };
 
-  async function handleFileUpload(file, userId, projectId) {
+  async function handleFileUpload(file, userId, projectId, visibility) {
     //  Get presigned URL from backend
     const presignRes = await fetch("/api/s3/upload", {
       method: "POST",
@@ -107,7 +107,7 @@ function ProjectPageInner() {
     });
   
     const { url, fields, key } = await presignRes.json();
-    const visibility = file?.visibility || "private";
+    // const visibility = file?.visibility || "private";
   
     // 2️⃣ Upload file directly to S3
     const formData = new FormData();
@@ -332,7 +332,7 @@ function ProjectPageInner() {
         </ModalHeader>
         <ModalContent>
           <FileUpload
-            onUpload={(file) => handleFileUpload(file, userId, projectId)}
+            onUpload={(file, visibility) => handleFileUpload(file, userId, projectId, visibility)}
             onClose={() => setUploadModalOpen(false)}
           />
         </ModalContent>

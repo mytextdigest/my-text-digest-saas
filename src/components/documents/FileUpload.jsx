@@ -116,7 +116,7 @@ const FileUpload = ({
         }
   
         // Actual upload (network / backend)
-        await onUpload(fileItem.file);
+        await onUpload(fileItem.file, fileItem.visibility);
   
         // Mark as fully complete only AFTER upload finishes
         setUploadProgress(prev => ({ ...prev, [fileItem.id]: 100 }));
