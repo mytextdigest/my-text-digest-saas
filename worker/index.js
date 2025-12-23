@@ -39,6 +39,19 @@ function chunkText(text, size = 2000) {
 }
 
 
+function sanitizeText(input) {
+  if (!input) return "";
+
+  return input
+    // Remove invalid UTF-8 replacement chars
+    .replace(/\uFFFD/g, "")
+    // Remove control characters except newline/tab
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    // Normalize Unicode
+    .normalize("NFC");
+}
+
+
 async function processChunkJob(job) {
   const { docId, s3Key, filename, visibility="private" } = job;
   console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
@@ -69,21 +82,31 @@ async function processChunkJob(job) {
     text = result.value;
   }
 
+  text = sanitizeText(text);
+
   await prisma.document.update({
     where: { id: docId },
     data: { content: text },
   });
 
   // 4. Chunk text
-  const chunks = chunkText(text, chunkSize);
+  const chunks = chunkText(text, chunkSize)
+  .map(c => sanitizeText(c))
+  .filter(Boolean);
 
-  await prisma.chunk.createMany({
-    data: chunks.map((c, i) => ({
-      documentId: docId,
-      chunkIndex: i,
-      text: c,
-    })),
-  });
+  const BATCH_SIZE = 50;
+
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+
+    await prisma.chunk.createMany({
+      data: batch.map((c, idx) => ({
+        documentId: docId,
+        chunkIndex: i + idx,
+        text: c,
+      })),
+    });
+  }
 
   // 5. Status → chunked
   await prisma.document.update({
