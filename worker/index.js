@@ -43,11 +43,13 @@ function sanitizeText(input) {
   if (!input) return "";
 
   return input
-    // Remove invalid UTF-8 replacement chars
+    // Remove replacement chars
     .replace(/\uFFFD/g, "")
-    // Remove control characters except newline/tab
+    // Remove control chars except newline + tab
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    // Normalize Unicode
+    // Neutralize orphaned backslashes (CRITICAL)
+    .replace(/\\(?![\\ntbrfux])/g, "")
+    // Normalize unicode
     .normalize("NFC");
 }
 
