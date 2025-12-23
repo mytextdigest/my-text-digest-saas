@@ -53,6 +53,11 @@ function sanitizeText(input) {
     .normalize("NFC");
 }
 
+function forceValidUTF8(input) {
+  if (!input) return "";
+  return Buffer.from(input, "utf8").toString("utf8");
+}
+
 
 async function processChunkJob(job) {
   const { docId, s3Key, filename, visibility = "private" } = job;
@@ -100,7 +105,8 @@ async function processChunkJob(job) {
     rawText = result.value;
   }
 
-  const text = sanitizeText(rawText);
+  text = forceValidUTF8(sanitizeText(text));
+
 
   if (!text || text.length < 50) {
     await prisma.document.update({
@@ -119,7 +125,7 @@ async function processChunkJob(job) {
   // 4. Prepare chunks
   // -----------------------------
   const chunks = chunkText(text, chunkSize)
-    .map(c => sanitizeText(c))
+    .map(c => forceValidUTF8(sanitizeText(c)))
     .filter(c => c.length > 0);
 
   if (chunks.length === 0) {
@@ -130,40 +136,78 @@ async function processChunkJob(job) {
     throw new Error(`No valid chunks generated for doc ${docId}`);
   }
 
+
   // -----------------------------
   // 5. Insert chunks (atomic, Prisma-safe)
   // -----------------------------
+  // try {
+  //   // Idempotency: clear old chunks
+  //   await prisma.chunk.deleteMany({
+  //     where: { documentId: docId },
+  //   });
+
+  //   for (let i = 0; i < chunks.length; i++) {
+  //     try {
+  //       await prisma.chunk.create({
+  //         data: {
+  //           documentId: docId,
+  //           chunkIndex: i,
+  //           text: chunks[i],
+  //         },
+  //       });
+  //     } catch (err) {
+  //       console.error("❌ Single chunk insert failed", {
+  //         docId,
+  //         chunkIndex: i,
+  //         sample: chunks[i].slice(0, 200),
+  //       });
+
+  //       throw err; // HARD FAIL → SQS retry
+  //     }
+  //   }
+  // } catch (err) {
+  //   await prisma.document.update({
+  //     where: { id: docId },
+  //     data: { status: "chunk_failed" },
+  //   });
+
+  //   throw err;
+  // }
+
+  // -----------------------------
+  // 5. Insert chunks (atomic)
+  // -----------------------------
   try {
-    // Idempotency: clear old chunks
+    // Remove any partial leftovers (idempotency)
     await prisma.chunk.deleteMany({
       where: { documentId: docId },
     });
 
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        await prisma.chunk.create({
-          data: {
-            documentId: docId,
-            chunkIndex: i,
-            text: chunks[i],
-          },
-        });
-      } catch (err) {
-        console.error("❌ Single chunk insert failed", {
-          docId,
-          chunkIndex: i,
-          sample: chunks[i].slice(0, 200),
-        });
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE);
 
-        throw err; // HARD FAIL → SQS retry
-      }
+      await prisma.chunk.createMany({
+        data: batch.map((c, idx) => ({
+          documentId: docId,
+          chunkIndex: i + idx,
+          text: c,
+        })),
+      });
     }
   } catch (err) {
+    console.error("❌ Chunk insertion failed", {
+      docId,
+      totalChunks: chunks.length,
+      failedAtBatch: Math.floor(chunks.length / BATCH_SIZE),
+      error: err.message,
+    });
+
     await prisma.document.update({
       where: { id: docId },
       data: { status: "chunk_failed" },
     });
 
+    // IMPORTANT: fail hard → SQS retry
     throw err;
   }
 
