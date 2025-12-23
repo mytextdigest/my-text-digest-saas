@@ -99,13 +99,29 @@ async function processChunkJob(job) {
   for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
     const batch = chunks.slice(i, i + BATCH_SIZE);
 
-    await prisma.chunk.createMany({
-      data: batch.map((c, idx) => ({
-        documentId: docId,
-        chunkIndex: i + idx,
-        text: c,
-      })),
-    });
+    
+
+    try {
+      await prisma.chunk.createMany({
+        data: batch.map((c, idx) => ({
+          documentId: docId,
+          chunkIndex: i + idx,
+          text: c,
+        })),
+      });
+    } catch (err) {
+      console.error("❌ Chunk insert failed", {
+        docId,
+        batchStart: i,
+        batchEnd: i + batch.length - 1,
+        chunkCount: batch.length,
+        sample: batch[0]?.slice(0, 200),
+      });
+    
+       // IMPORTANT: let worker fail so SQS retries
+    }
+
+
   }
 
   // 5. Status → chunked
