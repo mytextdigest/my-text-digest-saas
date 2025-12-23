@@ -53,55 +53,93 @@ function sanitizeText(input) {
 
 
 async function processChunkJob(job) {
-  const { docId, s3Key, filename, visibility="private" } = job;
+  const { docId, s3Key, filename, visibility = "private" } = job;
   console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
 
   const chunkSize = visibility === "public" ? 8000 : 2000;
+  const BATCH_SIZE = 20; // SAFE for Prisma + Postgres
 
-  // 1. Set status
+  // -----------------------------
+  // 1. Mark extracting
+  // -----------------------------
+  const existingDoc = await prisma.document.findUnique({
+    where: { id: docId },
+  });
+
+  if (!existingDoc) {
+    throw new Error(`Document ${docId} not found (aborting chunk job)`);
+  }
+
   await prisma.document.update({
     where: { id: docId },
     data: { status: "extracting" },
   });
 
+  // -----------------------------
   // 2. Download file
+  // -----------------------------
   const object = await s3.send(
     new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key })
   );
 
   const buffer = await streamToBuffer(object.Body);
 
-  // 3. Extract text
-  let text = "";
+  // -----------------------------
+  // 3. Extract + sanitize text
+  // -----------------------------
+  let rawText = "";
+
   if (filename.endsWith(".pdf")) {
-    text = await extractPdfText(buffer);
+    rawText = await extractPdfText(buffer);
   } else if (filename.endsWith(".txt")) {
-    text = buffer.toString("utf8");
+    rawText = buffer.toString("utf8");
   } else if (filename.endsWith(".docx")) {
     const result = await mammoth.extractRawText({ buffer });
-    text = result.value;
+    rawText = result.value;
   }
 
-  text = sanitizeText(text);
+  const text = sanitizeText(rawText);
+
+  if (!text || text.length < 50) {
+    await prisma.document.update({
+      where: { id: docId },
+      data: { status: "chunk_failed" },
+    });
+    throw new Error(`Extracted text empty or invalid for doc ${docId}`);
+  }
 
   await prisma.document.update({
     where: { id: docId },
     data: { content: text },
   });
 
-  // 4. Chunk text
+  // -----------------------------
+  // 4. Prepare chunks
+  // -----------------------------
   const chunks = chunkText(text, chunkSize)
-  .map(c => sanitizeText(c))
-  .filter(Boolean);
+    .map(c => sanitizeText(c))
+    .filter(c => c.length > 0);
 
-  const BATCH_SIZE = 50;
+  if (chunks.length === 0) {
+    await prisma.document.update({
+      where: { id: docId },
+      data: { status: "chunk_failed" },
+    });
+    throw new Error(`No valid chunks generated for doc ${docId}`);
+  }
 
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batch = chunks.slice(i, i + BATCH_SIZE);
+  // -----------------------------
+  // 5. Insert chunks (atomic)
+  // -----------------------------
+  try {
+    // Remove any partial leftovers (idempotency)
+    await prisma.chunk.deleteMany({
+      where: { documentId: docId },
+    });
 
-    
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE);
 
-    try {
       await prisma.chunk.createMany({
         data: batch.map((c, idx) => ({
           documentId: docId,
@@ -109,28 +147,35 @@ async function processChunkJob(job) {
           text: c,
         })),
       });
-    } catch (err) {
-      console.error("❌ Chunk insert failed", {
-        docId,
-        batchStart: i,
-        batchEnd: i + batch.length - 1,
-        chunkCount: batch.length,
-        sample: batch[0]?.slice(0, 200),
-      });
-    
-       // IMPORTANT: let worker fail so SQS retries
     }
+  } catch (err) {
+    console.error("❌ Chunk insertion failed", {
+      docId,
+      totalChunks: chunks.length,
+      failedAtBatch: Math.floor(chunks.length / BATCH_SIZE),
+      error: err.message,
+    });
 
+    await prisma.document.update({
+      where: { id: docId },
+      data: { status: "chunk_failed" },
+    });
 
+    // IMPORTANT: fail hard → SQS retry
+    throw err;
   }
 
-  // 5. Status → chunked
+  // -----------------------------
+  // 6. Mark chunked
+  // -----------------------------
   await prisma.document.update({
     where: { id: docId },
     data: { status: "chunked" },
   });
 
-  // 6. Notify user (basic chat ready)
+  // -----------------------------
+  // 7. Notify user (optional)
+  // -----------------------------
   const doc = await prisma.document.findUnique({
     where: { id: docId },
     include: { user: true },
@@ -142,13 +187,15 @@ async function processChunkJob(job) {
       to: doc.user.email,
       subject: "Chat is Ready",
       html: `
-        <p>Your document <strong>${filename}</strong> is chunked.</p>
-        <p>You can now start basic chat while embeddings are generated.</p>
+        <p>Your document <strong>${filename}</strong> is ready for chat.</p>
+        <p>Embeddings are being generated in the background.</p>
       `,
     });
   }
 
-  // 7. Enqueue embedding job
+  // -----------------------------
+  // 8. Enqueue embedding job
+  // -----------------------------
   await sqs.send(
     new SendMessageCommand({
       QueueUrl: QUEUE_URL,
@@ -162,6 +209,7 @@ async function processChunkJob(job) {
 
   console.log(`✅ Chunk job complete: ${docId}`);
 }
+
 
 
 
