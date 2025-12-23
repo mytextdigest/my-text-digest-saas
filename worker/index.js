@@ -105,6 +105,8 @@ async function processChunkJob(job) {
     rawText = result.value;
   }
 
+  let text = rawText
+
   text = forceValidUTF8(sanitizeText(text));
 
 
