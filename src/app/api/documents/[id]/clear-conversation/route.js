@@ -8,7 +8,7 @@ export async function POST(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const documentId = params.id;
+    const { id: documentId } = await params;
 
     const doc = await prisma.document.findFirst({
       where: { id: documentId, user: { email: session.user.email } }
@@ -17,16 +17,24 @@ export async function POST(req, { params }) {
     if (!doc)
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
-    const newConv = await prisma.conversation.create({
-      data: {
-        documentId,
-        userId: doc.userId
-      }
+    // 🔥 Find the active conversation
+    const conv = await prisma.conversation.findFirst({
+      where: { documentId, userId: doc.userId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (!conv) {
+      return NextResponse.json({ success: true });
+    }
+
+    // 🔥 DELETE messages (this is the actual clear)
+    await prisma.message.deleteMany({
+      where: { conversationId: conv.id }
     });
 
     return NextResponse.json({
       success: true,
-      conversationId: newConv.id
+      conversationId: conv.id
     });
 
   } catch (err) {

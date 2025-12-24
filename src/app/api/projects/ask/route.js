@@ -300,6 +300,9 @@ BM25 retrieval has selected the most relevant chunks.
     }
 
 
+
+    const missing = allChunks.filter(c => !c.embedding);
+
     // 7) Inline embed small missing counts (≤10)
     if (missing.length > 0) {
       for (const chunk of missing) {

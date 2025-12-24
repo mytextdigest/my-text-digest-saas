@@ -14,7 +14,7 @@ export async function POST(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const documentId = params.id;
+    const { id:documentId } = await params;
     const { question, conversationId: incomingConvId } = await req.json();
 
     if (!documentId || !question)

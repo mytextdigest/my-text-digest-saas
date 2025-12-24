@@ -8,7 +8,7 @@ export async function GET(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const projectId = params.projectId;
+    const { projectId:projectId } = await params;
     if (!projectId)
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
 

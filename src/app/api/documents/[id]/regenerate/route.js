@@ -14,7 +14,11 @@ export async function POST(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const documentId = params.id;
+    const { id: documentId } = await params;
+
+    console.log("Regenerate Document id: ", documentId)
+
+
     if (!documentId)
       return NextResponse.json({ error: "Missing document id" }, { status: 400 });
 

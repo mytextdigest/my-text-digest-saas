@@ -219,7 +219,9 @@ const generateSummary = async () => {
   setIsGeneratingSummary(true);
 
   try {
-    const res = await fetch(`/api/documents/${doc.id}/regenerate`, {
+
+    const docId = doc.id 
+    const res = await fetch(`/api/documents/${docId}/regenerate`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" }

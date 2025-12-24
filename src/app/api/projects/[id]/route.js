@@ -11,8 +11,8 @@ export async function GET(req, { params }) {
 
   const { id: projectId } = await params;
 
-  console.log("project id: ", projectId)
-  console.log("Params ", params)
+  // console.log("project id: ", projectId)
+  // console.log("Params ", params)
 
   if (!projectId) return NextResponse.json(null);
 

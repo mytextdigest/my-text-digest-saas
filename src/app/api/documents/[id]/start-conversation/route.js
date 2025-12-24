@@ -8,7 +8,9 @@ export async function POST(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { startConvDocId: documentId } = await params;
+    const { id: documentId } = await params;
+
+    console.log("Conv document id: ", documentId)
 
     // Validate doc belongs to user
     const doc = await prisma.document.findFirst({
