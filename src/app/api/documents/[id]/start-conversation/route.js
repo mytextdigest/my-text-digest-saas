@@ -23,7 +23,11 @@ export async function POST(req, { params }) {
 
     // Check for existing conversation
     const existing = await prisma.conversation.findFirst({
-      where: { documentId },
+      where: {
+        documentId,
+        userId: doc.userId,
+        messages: { some: {} } // 🔒 must still have messages
+      },
       orderBy: { createdAt: "desc" }
     });
 

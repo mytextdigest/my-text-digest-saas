@@ -24,7 +24,10 @@ export async function POST(req, { params }) {
     });
 
     if (!conv) {
-      return NextResponse.json({ success: true });
+      const newConv = await prisma.conversation.create({
+        data: { documentId, userId: doc.userId }
+      });
+      return NextResponse.json({ success: true, conversationId: newConv.id });
     }
 
     // 🔥 DELETE messages (this is the actual clear)

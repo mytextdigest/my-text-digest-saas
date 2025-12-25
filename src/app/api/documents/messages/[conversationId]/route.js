@@ -8,7 +8,7 @@ export async function GET(req, { params }) {
     if (!session?.user?.email)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { convId: conversationId } = await params;
+    const { conversationId: conversationId } = await params;
 
     // Validate access — user must own the conversation
     const conv = await prisma.conversation.findFirst({
