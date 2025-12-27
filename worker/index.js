@@ -58,10 +58,22 @@ function forceValidUTF8(input) {
   return Buffer.from(input, "utf8").toString("utf8");
 }
 
+function startTimer(label, meta = {}) {
+  const start = Date.now();
+  console.log(`⏱️ START ${label}`, meta);
+
+  return () => {
+    const durationMs = Date.now() - start;
+    console.log(`⏱️ END ${label} — ${(durationMs / 1000).toFixed(2)}s`, meta);
+    return durationMs;
+  };
+}
 
 async function processChunkJob(job) {
   const { docId, s3Key, filename, visibility = "private" } = job;
   console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
+  const endTotal = startTimer("CHUNK JOB TOTAL", { docId });
+
 
   const chunkSize = visibility === "public" ? 8000 : 2000;
   const BATCH_SIZE = 20; // SAFE for Prisma + Postgres
@@ -85,9 +97,11 @@ async function processChunkJob(job) {
   // -----------------------------
   // 2. Download file
   // -----------------------------
+  const endDownload = startTimer("S3 DOWNLOAD", { docId });
   const object = await s3.send(
     new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key })
   );
+  endDownload();
 
   const buffer = await streamToBuffer(object.Body);
 
@@ -95,6 +109,8 @@ async function processChunkJob(job) {
   // 3. Extract + sanitize text
   // -----------------------------
   let rawText = "";
+
+  const endExtract = startTimer("TEXT EXTRACTION", { docId, filename });
 
   if (filename.endsWith(".pdf")) {
     rawText = await extractPdfText(buffer);
@@ -108,6 +124,8 @@ async function processChunkJob(job) {
   let text = rawText
 
   text = forceValidUTF8(sanitizeText(text));
+
+  endExtract();
 
 
   if (!text || text.length < 50) {
@@ -129,6 +147,8 @@ async function processChunkJob(job) {
   const chunks = chunkText(text, chunkSize)
     .map(c => forceValidUTF8(sanitizeText(c)))
     .filter(c => c.length > 0);
+
+  
 
   if (chunks.length === 0) {
     await prisma.document.update({
@@ -256,6 +276,7 @@ async function processChunkJob(job) {
   );
 
   console.log(`✅ Chunk job complete: ${docId}`);
+  endTotal();
 }
 
 
@@ -313,6 +334,10 @@ async function processEmbeddingJob(job) {
 async function processSummarizationJob(job) {
   const { docId, filename, regenerate = false } = job; 
   // regenerate defaults to false if not provided
+  const endSummaryTotal = startTimer("SUMMARY TOTAL", {
+    docId,
+    regenerate,
+  });
 
   console.log(`🟩 SUMMARY JOB: ${docId} (regenerate = ${regenerate})`);
 
@@ -409,6 +434,7 @@ async function processSummarizationJob(job) {
   }
 
   console.log(`✅ Summarization complete: ${docId} (regenerate: ${regenerate})`);
+  endSummaryTotal();
 }
 
 
