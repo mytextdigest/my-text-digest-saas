@@ -75,7 +75,7 @@ async function processChunkJob(job) {
   const endTotal = startTimer("CHUNK JOB TOTAL", { docId });
 
 
-  const chunkSize = visibility === "public" ? 8000 : 2000;
+  const chunkSize = visibility === "public" ? 12000 : 10000;
   const BATCH_SIZE = 20; // SAFE for Prisma + Postgres
 
   // -----------------------------
