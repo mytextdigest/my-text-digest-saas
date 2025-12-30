@@ -286,6 +286,8 @@ async function processEmbeddingJob(job) {
   const { docId, filename } = job;
   console.log(`🟧 EMBEDDING JOB: ${docId}`);
 
+  const endEmbeddingTotal = startTimer("EMBEDDING JOB TOTAL", { docId });
+
   await prisma.document.update({
     where: { id: docId },
     data: { status: "embedding" },
@@ -328,6 +330,7 @@ async function processEmbeddingJob(job) {
   );
 
   console.log(`✅ Embedding complete: ${docId}`);
+  endEmbeddingTotal()
 }
 
 
