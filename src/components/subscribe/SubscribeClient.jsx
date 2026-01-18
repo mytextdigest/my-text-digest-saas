@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Layout from "../layout/Layout";
+import SubscriptionLayout from "../layout/SubscriptionLayout";
 
 export default function SubscribeClient({ plans }) {
   const [interval, setInterval] = useState("month"); // month | year
@@ -11,7 +12,7 @@ export default function SubscribeClient({ plans }) {
   );
 
   return (
-    <Layout>
+    <SubscriptionLayout>
       <div className="max-w-3xl mx-auto p-8">
         <h1 className="text-2xl font-bold mb-6">Choose a Plan</h1>
 
@@ -79,7 +80,7 @@ export default function SubscribeClient({ plans }) {
           ))}
         </div>
       </div>
-    </Layout>
+    </SubscriptionLayout>
     
   );
 }
