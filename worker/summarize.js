@@ -1,11 +1,11 @@
 import pLimit from "p-limit";
 import OpenAI from "openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const limit = pLimit(5);   // concurrency for summarizing chunks
 
-export async function summarizeChunks(chunks, filename) {
+export async function summarizeChunks(openai, chunks, filename) {
   console.log(`🟡 Starting summarization for: ${filename} (${chunks.length} chunks)`);
 
   const summarizeChunk = async (chunkText, idx) => {
@@ -33,7 +33,7 @@ export async function summarizeChunks(chunks, filename) {
   return results;
 }
 
-export async function createStructuredSummary(chunkSummaries, filename) {
+export async function createStructuredSummary(openai, chunkSummaries, filename) {
   const joined = chunkSummaries.join("\n\n");
 
   const completion = await openai.chat.completions.create({

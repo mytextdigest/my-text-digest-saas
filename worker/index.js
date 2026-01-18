@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
 import nodemailer from "nodemailer";
 import { createStructuredSummary, summarizeChunks } from "./summarize.js";
+import { getOpenAIForDocument } from "./openai.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -14,7 +15,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sqs = new SQSClient({});
 const s3 = new S3Client({});
 const prisma = new PrismaClient();
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+// const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 async function streamToBuffer(stream) {
   const chunks = [];
@@ -286,6 +287,8 @@ async function processEmbeddingJob(job) {
   const { docId, filename } = job;
   console.log(`🟧 EMBEDDING JOB: ${docId}`);
 
+  const openai = await getOpenAIForDocument(docId);
+
   const endEmbeddingTotal = startTimer("EMBEDDING JOB TOTAL", { docId });
 
   await prisma.document.update({
@@ -300,6 +303,8 @@ async function processEmbeddingJob(job) {
 
   // Loop through & create embeddings
   for (const chunk of chunks) {
+    
+
     const emb = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: chunk.text.slice(0, 8000),
@@ -336,11 +341,15 @@ async function processEmbeddingJob(job) {
 
 async function processSummarizationJob(job) {
   const { docId, filename, regenerate = false } = job; 
+
+  const openai = await getOpenAIForDocument(docId);
   // regenerate defaults to false if not provided
   const endSummaryTotal = startTimer("SUMMARY TOTAL", {
     docId,
     regenerate,
   });
+
+
 
   console.log(`🟩 SUMMARY JOB: ${docId} (regenerate = ${regenerate})`);
 
@@ -366,7 +375,7 @@ async function processSummarizationJob(job) {
   console.log(`📄 Summarizing ${chunkTexts.length} chunks (regenerate: ${regenerate})`);
 
   // Generate per-chunk summaries
-  const chunkSummaries = await summarizeChunks(chunkTexts, filename);
+  const chunkSummaries = await summarizeChunks(openai, chunkTexts, filename);
 
   // Save chunk summaries
   for (let i = 0; i < chunkSummaries.length; i++) {
@@ -377,7 +386,7 @@ async function processSummarizationJob(job) {
   }
 
   // Final structured summary
-  const structured = await createStructuredSummary(chunkSummaries, filename);
+  const structured = await createStructuredSummary(openai, chunkSummaries, filename);
 
   // Save document summary + mark ready
   await prisma.document.update({
