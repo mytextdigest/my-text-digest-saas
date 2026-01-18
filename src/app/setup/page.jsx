@@ -39,7 +39,14 @@ export default function SetupPage() {
     setStatus({ type: 'loading', message: 'Verifying your API key...' });
 
     try {
-      const result = await window.api.verifyApiKey(apiKey);
+      const res = await fetch("/api/settings/verify-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+  
+      const result = await res.json();
+
       if (result.valid) {
         setVerified(true);
         setStatus({ type: 'success', message: 'API Key is valid and ready to use!' });
@@ -60,16 +67,33 @@ export default function SetupPage() {
 
     setIsSaving(true);
     try {
-      await window.api.saveApiKey(apiKey);
-      setStatus({ type: 'success', message: 'API key saved successfully! Redirecting...' });
+      const res = await fetch("/api/settings/save-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save API key");
+      }
+
+      setStatus({
+        type: "success",
+        message: "API key saved successfully! Redirecting...",
+      });
+
       setTimeout(() => {
-        router.push("/");
+        router.push("/dashboard");
       }, 1000);
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Failed to save API key. Please try again.' });
+    } catch {
+      setStatus({
+        type: "error",
+        message: "Failed to save API key. Please try again.",
+      });
       setIsSaving(false);
     }
   };
+
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !verified && !isVerifying) {
@@ -142,7 +166,7 @@ export default function SetupPage() {
             <CardHeader className="text-center pb-6">
               <CardTitle className="text-2xl">Setup OpenAI API Key</CardTitle>
               <CardDescription className="text-base mt-2">
-                Your API key is stored locally and never shared
+                Your API key is stored and never shared
               </CardDescription>
             </CardHeader>
 
@@ -345,9 +369,10 @@ export default function SetupPage() {
           className="mt-8 text-center"
         >
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Your API key is encrypted and stored locally on your device.
+          Your API key is securely stored and used only to make requests on your behalf.
             <br />
-            We never send your key to our servers.
+            {/* We never share your key with third parties. */}
+
           </p>
         </motion.div>
       </motion.div>

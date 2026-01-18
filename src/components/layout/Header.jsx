@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
 import LogoutButton from '../ui/LogoutButton';
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
 
 const Header = ({
   onSearch,
@@ -13,6 +15,7 @@ const Header = ({
   onSearchChange,
   className
 }) => {
+  const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [activeTab, setActiveTab] = useState('general'); // 'general' or 'apikey'
@@ -23,20 +26,37 @@ const Header = ({
   const [isSaving, setIsSaving] = useState(false);
   const [verified, setVerified] = useState(false);
   const [status, setStatus] = useState(null);
+  const [subscription, setSubscription] = useState(null);
+  const [loadingSubscription, setLoadingSubscription] = useState(true);
 
   useEffect(() => {
     setIsClient(true);
     loadApiKey();
   }, []);
 
-  const loadApiKey = async () => {
-    if (typeof window !== 'undefined' && window.api) {
-      const key = await window.api.getApiKey();
-      if (key) {
-        setCurrentApiKey(key);
-        setApiKey(key);
-      }
+  useEffect(() => {
+    if (activeTab === "general") {
+      fetch("/api/subscription")
+        .then(res => res.json())
+        .then(data => setSubscription(data))
+        .catch(() => setSubscription(null))
+        .finally(() => setLoadingSubscription(false));
     }
+  }, [activeTab]);
+
+  const loadApiKey = async () => {
+    console.log("Loading api key ...")
+    // if (typeof window !== 'undefined' && window.api) {
+    const res = await fetch("/api/settings/get-openai-key");
+    const data = await res.json();
+
+    if (data.key) {
+      setCurrentApiKey(data.key);
+      setApiKey(data.key);
+    }
+
+    console.log("Loaded api key succesfully")
+    // }
   };
 
   const handleVerifyApiKey = async () => {
@@ -49,7 +69,14 @@ const Header = ({
     setStatus({ type: 'loading', message: 'Verifying...' });
 
     try {
-      const result = await window.api.verifyApiKey(apiKey);
+      const res = await fetch("/api/settings/verify-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+      
+      const result = await res.json();
+
       if (result.valid) {
         setVerified(true);
         setStatus({ type: 'success', message: 'API Key is valid!' });
@@ -70,7 +97,17 @@ const Header = ({
 
     setIsSaving(true);
     try {
-      await window.api.saveApiKey(apiKey);
+      const res = await fetch("/api/settings/save-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save API key");
+      }
+
+
       setCurrentApiKey(apiKey);
       setStatus({ type: 'success', message: 'API key saved successfully!' });
       setTimeout(() => {
@@ -87,20 +124,25 @@ const Header = ({
   const handleRemoveApiKey = async () => {
     setIsSaving(true);
     try {
-      await window.api.saveApiKey(''); // Save empty string to remove
-      setCurrentApiKey('');
-      setApiKey('');
+      const res = await fetch("/api/settings/remove-openai-key", {
+        method: "POST",
+      });
+  
+      if (!res.ok) throw new Error();
+  
+      setCurrentApiKey("");
+      setApiKey("");
       setVerified(false);
-      setStatus({ type: 'success', message: 'API key removed successfully!' });
-      setTimeout(() => {
-        setStatus(null);
-      }, 2000);
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Failed to remove API key' });
+      setStatus({ type: "success", message: "API key removed successfully!" });
+  
+      setTimeout(() => setStatus(null), 2000);
+    } catch {
+      setStatus({ type: "error", message: "Failed to remove API key" });
     } finally {
       setIsSaving(false);
     }
   };
+  
 
   // Check if API key has been changed
   const hasApiKeyChanged = apiKey !== currentApiKey;
@@ -204,7 +246,7 @@ const Header = ({
                     >
                       General
                     </button>
-                    {/* <button
+                    <button
                       onClick={() => {
                         setActiveTab('apikey');
                         setStatus(null);
@@ -220,7 +262,7 @@ const Header = ({
                     >
                       <Key className="h-3.5 w-3.5" />
                       <span>API Key</span>
-                    </button> */}
+                    </button>
                   </div>
 
                   {/* General Tab */}
@@ -229,7 +271,7 @@ const Header = ({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.2 }}
-                      className="space-y-4"
+                      className="space-y-6"
                     >
                       {/* Theme Info */}
                       <div className="flex items-center justify-between">
@@ -244,21 +286,65 @@ const Header = ({
                         </div>
                       </div>
 
-                      {/* Additional Settings */}
-                      <div className="border-t border-gray-200 dark:border-gray-700">
-                        {/* <p className="text-sm text-gray-600 dark:text-gray-400">
-                          More settings coming soon...
-                        </p> */}
-                        {/* Logout Button */}
-                        <LogoutButton />
+                      {/* Subscription */}
+                      <div className="flex items-start justify-between gap-6">
+                        <div>
+                          <p className="font-medium text-gray-900 dark:text-gray-100">
+                            Subscription
+                          </p>
+
+                          {loadingSubscription ? (
+                            <p className="text-sm text-gray-500 mt-1">Loading subscription…</p>
+                          ) : subscription?.plan ? (
+                            <div className="mt-1 space-y-1">
+                              <p className="text-sm text-gray-700 dark:text-gray-300">
+                                <strong>{subscription.plan.name}</strong>{" "}
+                                · {subscription.plan.storageLimitGb} GB
+                              </p>
+
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                ${(subscription.plan.priceCents / 100).toFixed(2)} /{" "}
+                                {subscription.plan.billingInterval}
+                              </p>
+
+                              {subscription.cancelAtPeriodEnd && subscription.currentPeriodEnd && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400">
+                                  Cancels on{" "}
+                                  {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500 mt-1">
+                              No active subscription
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={async () => {
+                            const res = await fetch("/api/stripe/portal", { method: "POST" });
+                            const data = await res.json();
+                            if (data.url) window.location.href = data.url;
+                          }}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                        >
+                          Manage subscription
+                        </button>
                       </div>
 
+                      {/* Divider */}
+                      <div className="border-t border-gray-200 dark:border-gray-700" />
+
+                      {/* Logout */}
+                      <LogoutButton />
                     </motion.div>
                   )}
 
+
                   {/* API Key Tab */}
                   {/* {activeTab === 'apikey' && ( */}
-                  {activeTab === '' && (
+                  {activeTab === 'apikey' && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}

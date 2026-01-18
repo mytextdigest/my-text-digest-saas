@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
+import { getUserOpenAIKey } from "@/utils/key_helper";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -86,6 +87,18 @@ export async function POST(req) {
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
     console.log("💬 Project ask:", projectId, question);
+
+
+    const apiKey = await getUserOpenAIKey(session.user.id);
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OPENAI_KEY_MISSING" },
+        { status: 400 }
+      );
+    }
+
+    const openai = new OpenAI({ apiKey });
 
     // 1) Conversation (latest or new)
     let conv = await prisma.projectConversation.findFirst({

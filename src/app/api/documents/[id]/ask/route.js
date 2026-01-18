@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
+import { getUserOpenAIKey } from "@/utils/key_helper";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req, { params }) {
   try {
@@ -36,6 +37,17 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
 
     const userId = doc.userId;
+
+    const apiKey = await getUserOpenAIKey(userId);
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "OPENAI_KEY_MISSING" },
+        { status: 400 }
+      );
+    }
+
+    const openai = new OpenAI({ apiKey });
 
     // ----------------------------
     // 3) ENSURE CONVERSATION EXISTS

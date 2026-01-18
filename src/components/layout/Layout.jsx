@@ -106,10 +106,10 @@ const Layout = ({ children, className }) => {
   return (
     <ToastProvider>
       {/* API Key Required Modal */}
-      {/* <ApiKeyRequiredModal
+      <ApiKeyRequiredModal
         isOpen={hasApiKey === false}
         onApiKeySet={refreshApiKeyStatus}
-      /> */}
+      />
 
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         {/* Header */}
@@ -146,15 +146,15 @@ const Layout = ({ children, className }) => {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3 }}
-            // className={cn(
-            //   "w-full min-h-[calc(100vh-4rem)] flex justify-center",
-            //   hasApiKey === false && "pointer-events-none opacity-50", // Disable interaction when API key is missing
-            //   className
-            // )}
             className={cn(
               "w-full min-h-[calc(100vh-4rem)] flex justify-center",
+              // hasApiKey === false && "pointer-events-none opacity-50", // Disable interaction when API key is missing
               className
             )}
+            // className={cn(
+            //   "w-full min-h-[calc(100vh-4rem)] flex justify-center",
+            //   className
+            // )}
           >
             <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full">
               {children}

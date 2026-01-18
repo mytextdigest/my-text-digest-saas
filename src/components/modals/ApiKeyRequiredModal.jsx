@@ -25,7 +25,14 @@ const ApiKeyRequiredModal = ({ isOpen, onApiKeySet }) => {
     setStatus({ type: 'loading', message: 'Verifying...' });
     
     try {
-      const result = await window.api.verifyApiKey(apiKey);
+      const res = await fetch("/api/settings/verify-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+      
+      const result = await res.json();
+
       if (result.valid) {
         setVerified(true);
         setStatus({ type: 'success', message: 'API Key is valid!' });
@@ -46,7 +53,17 @@ const ApiKeyRequiredModal = ({ isOpen, onApiKeySet }) => {
     
     setIsSaving(true);
     try {
-      await window.api.saveApiKey(apiKey);
+      const res = await fetch("/api/settings/save-openai-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save API key");
+      }
+
+
       setStatus({ type: 'success', message: 'API key saved successfully!' });
       setTimeout(() => {
         onApiKeySet();

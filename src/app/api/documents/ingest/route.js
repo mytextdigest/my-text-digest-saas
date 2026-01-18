@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 export async function POST(req) {
   try {
@@ -32,23 +33,85 @@ export async function POST(req) {
 
     const dbUser = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      include: {
+        subscription: {
+          include: { plan: true }
+        }
+      }
     });
-
+    
     if (!dbUser)
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    
+    if (!dbUser.subscription || !dbUser.subscription.plan) {
+      return NextResponse.json(
+        { error: "No active subscription" },
+        { status: 403 }
+      );
+    }
+
+
+    const s3 = new S3Client({ region: process.env.AWS_REGION });
+
+    const head = await s3.send(
+      new HeadObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: s3Key,
+      })
+    );
+
+    const fileSizeBytes = head.ContentLength;
+
+    if (!fileSizeBytes) {
+      return NextResponse.json(
+        { error: "Unable to determine file size" },
+        { status: 400 }
+      );
+    }
+
+
+
+    const planLimitBytes =
+      dbUser.subscription.plan.storageLimitGb * 1024 * 1024 * 1024;
+
+    const currentUsage = BigInt(dbUser.storageUsedBytes);
+    const incomingSize = BigInt(fileSizeBytes);
+    const projectedUsage = currentUsage + incomingSize;
+
+    if (projectedUsage > BigInt(planLimitBytes)) {
+      return NextResponse.json(
+        {
+          error: "Storage limit exceeded",
+          limitGb: dbUser.subscription.plan.storageLimitGb,
+          usedBytes: Number(currentUsage),
+          incomingBytes: Number(incomingSize)
+        },
+        { status: 413 }
+      );
+    }
 
     // Document created with "queued" status
-    const doc = await prisma.document.create({
-      data: {
-        filename,
-        filePath: s3Key,
-        status: "queued",
-        visibility,
-        project: { connect: { id: projectId } },
-        user: { connect: { id: dbUser.id } },
-      },
-    });
+    const [doc] = await prisma.$transaction([
+      prisma.document.create({
+        data: {
+          filename,
+          filePath: s3Key,
+          status: "queued",
+          visibility,
+          project: { connect: { id: projectId } },
+          user: { connect: { id: dbUser.id } },
+        },
+      }),
+    
+      prisma.user.update({
+        where: { id: dbUser.id },
+        data: {
+          storageUsedBytes: {
+            increment: fileSizeBytes
+          }
+        }
+      })
+    ]);
 
     // SQS client
     const sqs = new SQSClient({ region: process.env.AWS_REGION });

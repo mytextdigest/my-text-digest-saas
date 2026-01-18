@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -18,8 +18,35 @@ const FileUpload = ({
   const [uploadProgress, setUploadProgress] = useState({});
   const [finalizing, setFinalizing] = useState({});
   const [showVisibilityInfo, setShowVisibilityInfo] = useState(true);
+  const [subscription, setSubscription] = useState(null);
 
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/api/subscription")
+      .then(res => res.json())
+      .then(data => setSubscription(data))
+      .catch(() => setSubscription(null));
+  }, []);
+
+
+  const planLimitBytes = subscription?.plan
+    ? subscription.plan.storageLimitGb * 1024 * 1024 * 1024
+    : null;
+
+  const currentUsageBytes = subscription?.user?.storageUsedBytes
+    ? Number(subscription.user.storageUsedBytes)
+    : 0;
+
+  const selectedBytes = files
+    .filter(f => f.status === "pending")
+    .reduce((sum, f) => sum + f.size, 0);
+
+  const exceedsStorage =
+    planLimitBytes !== null &&
+    currentUsageBytes + selectedBytes > planLimitBytes;
+  
+  console.log("selectedBytes: ",selectedBytes)
 
   const validateFile = (file) => {
     const errors = [];
@@ -391,6 +418,27 @@ const FileUpload = ({
         </div>
       </div> */}
 
+      {exceedsStorage && (
+        <div className="flex items-center mt-4 justify-between gap-4 p-3 rounded-md
+                        bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+          <p className="text-sm text-red-700 dark:text-red-300">
+            Storage limit exceeded. Upgrade your plan to upload more files.
+          </p>
+
+          <button
+            onClick={async () => {
+              const res = await fetch("/api/stripe/portal", { method: "POST" });
+              const data = await res.json();
+              if (data.url) window.location.href = data.url;
+            }}
+            className="shrink-0 text-sm font-medium text-blue-600 hover:text-blue-700
+                      dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+          >
+            Upgrade plan
+          </button>
+        </div>
+      )}
+
       {/* Visibility Explanation */}
       <div className="mt-4">
         <button
@@ -425,6 +473,9 @@ const FileUpload = ({
         </AnimatePresence>
       </div>
 
+      
+
+
       {/* Actions */}
       {files.length > 0 && (
         <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">
@@ -444,7 +495,7 @@ const FileUpload = ({
             
             <Button 
               onClick={uploadFiles} 
-              disabled={validFiles === 0 || uploading}
+              disabled={validFiles === 0 || uploading || exceedsStorage}
               loading={uploading}
             >
               Upload {validFiles > 0 && `(${validFiles})`}

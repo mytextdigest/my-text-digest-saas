@@ -32,10 +32,10 @@ const TwoColumnLayout = ({
   return (
     <>
       {/* API Key Required Modal */}
-      {/* <ApiKeyRequiredModal
+      <ApiKeyRequiredModal
         isOpen={hasApiKey === false}
         onApiKeySet={refreshApiKeyStatus}
-      /> */}
+      />
 
       <div className={cn("h-full", hasApiKey === false && "pointer-events-none opacity-50", className)}>
       {/* Mobile Tab Navigation */}
