@@ -13,7 +13,7 @@ const SubscriptionLayout = ({ children, className }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
-//   const { hasApiKey, isLoading, refreshApiKeyStatus } = useApiKeyCheck();
+  const { hasApiKey, isLoading, refreshApiKeyStatus } = useApiKeyCheck();
 
   // Initialize theme based on system preference only
   useEffect(() => {
@@ -90,18 +90,18 @@ const SubscriptionLayout = ({ children, className }) => {
   };
 
   // Show loading screen while checking API key
-  if (isLoading) {
-    return (
-      <ToastProvider>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
-            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-          </div>
-        </div>
-      </ToastProvider>
-    );
-  }
+//   if (isLoading) {
+//     return (
+//       <ToastProvider>
+//         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+//           <div className="text-center">
+//             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
+//             <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+//           </div>
+//         </div>
+//       </ToastProvider>
+//     );
+//   }
 
   return (
     <ToastProvider>
