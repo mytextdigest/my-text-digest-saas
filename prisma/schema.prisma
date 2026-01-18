@@ -15,11 +15,15 @@ model User {
   image         String?
   createdAt     DateTime              @default(now()) @map("created_at")
   emailVerified Boolean               @default(false)
+
+  storageUsedBytes BigInt             @default(0)
+
   conversations Conversation[]
   documents     Document[]
   projects      Project[]
   projectChats  ProjectConversation[]
   settings      Setting[]
+  subscription  Subscription?
 }
 
 model OtpToken {
@@ -35,6 +39,8 @@ model Setting {
   value  String?
   userId String
   user   User    @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key])
 }
 
 model Project {
@@ -117,4 +123,41 @@ model ProjectMessage {
   createdAt      DateTime            @default(now()) @map("created_at")
   conversationId String              @map("conversation_id")
   conversation   ProjectConversation @relation(fields: [conversationId], references: [id])
+}
+
+
+
+// Subscription Extension
+
+model Plan {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  description      String?
+  storageLimitGb   Int      // e.g. 1, 3, 10
+  priceCents       Int      @default(0)// e.g. 999 = $9.99
+  currency         String   @default("USD")
+  stripePriceId    String   @unique
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  billingInterval  String   @default("month")
+
+  subscriptions    Subscription[]
+}
+
+
+
+model Subscription {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  planId                 String
+  status                 String   // active, trialing, past_due, canceled
+  stripeCustomerId       String
+  stripeSubscriptionId   String
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean  @default(false)
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
 }
