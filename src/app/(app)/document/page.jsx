@@ -11,6 +11,7 @@ import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
+import DocViewer, { DocViewerRenderers } from "react-doc-viewer";
 
 
 
@@ -78,12 +79,12 @@ function DocumentContent() {
 
   // Extract DOCX -> HTML
   useEffect(() => {
-    if (doc?.filename?.endsWith(".docx") && doc?.file_path && typeof window !== 'undefined' && window.api && window.api.convertDocxToHtml) {
-      window.api.convertDocxToHtml(doc.file_path).then((html) => {
-        setDocxHtml(html);
-      }).catch((error) => {
-        console.error("Error converting DOCX to HTML:", error);
-      });
+    if (doc?.filename?.endsWith(".docx") && doc?.fileUrl) {
+      fetch(doc.fileUrl)
+        .then(res => res.arrayBuffer())
+        .then(buffer => mammoth.convertToHtml({ arrayBuffer: buffer }))
+        .then(result => setDocxHtml(result.value))
+        .catch(err => console.error("DOCX render error:", err));
     }
   }, [doc]);
 
@@ -213,123 +214,123 @@ function DocumentContent() {
 
   // regenerate document summary
   // Generate summary when user clicks "Regenerate summary"
-const generateSummary = async () => {
-  if (!doc) return;
+  const generateSummary = async () => {
+    if (!doc) return;
 
-  setIsGeneratingSummary(true);
+    setIsGeneratingSummary(true);
 
-  try {
+    try {
 
-    const docId = doc.id 
-    const res = await fetch(`/api/documents/${docId}/regenerate`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" }
-    }).then(r => r.json());
+      const docId = doc.id 
+      const res = await fetch(`/api/documents/${docId}/regenerate`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" }
+      }).then(r => r.json());
 
-    if (!res?.success) {
-      throw new Error(res?.error || "Failed to queue regenerate summary");
-    }
-
-    // Immediately re-fetch the doc once to get updated status
-    const fresh = await fetch(`/api/documents/${doc.id}`, {
-      method: "GET",
-      credentials: "include"
-    }).then(r => r.json());
-
-    // if (fresh?.filePath) fresh.fileUrl = getS3Url(fresh.filePath);
-    setDoc(fresh);
-
-    // If summary already present (rare), update UI immediately
-    if (fresh?.summary) {
-      let parsedSummary;
-      try {
-        parsedSummary = JSON.parse(fresh.summary);
-      } catch {
-        parsedSummary = { overview: fresh.summary, keyPoints: [] };
+      if (!res?.success) {
+        throw new Error(res?.error || "Failed to queue regenerate summary");
       }
 
-      setSummary({
-        title: fresh.filename,
-        overview: parsedSummary.overview,
-        keyPoints: parsedSummary.keyPoints || [],
-        wordCount: fresh.content ? fresh.content.split(" ").length : "N/A",
-        estimatedReadTime: fresh.content ? Math.ceil(fresh.content.split(" ").length / 200) : "N/A",
-        documentType: fresh.filename.split(".").pop().toUpperCase(),
-        lastModified: new Date().toLocaleDateString(),
-      });
-
-      setIsGeneratingSummary(false);
-      return;
-    }
-
-    // Otherwise poll until summary appears or timeout
-    const pollIntervalMs = 3000;
-    const maxPollSeconds = 120; // 2 minutes
-    const start = Date.now();
-    let summaryFound = false;
-
-    while ((Date.now() - start) / 1000 < maxPollSeconds) {
-      await new Promise((r) => setTimeout(r, pollIntervalMs));
-
-      const polled = await fetch(`/api/documents/${doc.id}`, {
+      // Immediately re-fetch the doc once to get updated status
+      const fresh = await fetch(`/api/documents/${doc.id}`, {
         method: "GET",
         credentials: "include"
       }).then(r => r.json());
 
-      // if (polled?.filePath) polled.fileUrl = getS3Url(polled.filePath);
-      setDoc(polled);
+      // if (fresh?.filePath) fresh.fileUrl = getS3Url(fresh.filePath);
+      setDoc(fresh);
 
-      if (polled?.summary) {
+      // If summary already present (rare), update UI immediately
+      if (fresh?.summary) {
         let parsedSummary;
         try {
-          parsedSummary = JSON.parse(polled.summary);
+          parsedSummary = JSON.parse(fresh.summary);
         } catch {
-          parsedSummary = { overview: polled.summary, keyPoints: [] };
+          parsedSummary = { overview: fresh.summary, keyPoints: [] };
         }
 
         setSummary({
-          title: polled.filename,
+          title: fresh.filename,
           overview: parsedSummary.overview,
           keyPoints: parsedSummary.keyPoints || [],
-          wordCount: polled.content ? polled.content.split(" ").length : "N/A",
-          estimatedReadTime: polled.content ? Math.ceil(polled.content.split(" ").length / 200) : "N/A",
-          documentType: polled.filename.split(".").pop().toUpperCase(),
+          wordCount: fresh.content ? fresh.content.split(" ").length : "N/A",
+          estimatedReadTime: fresh.content ? Math.ceil(fresh.content.split(" ").length / 200) : "N/A",
+          documentType: fresh.filename.split(".").pop().toUpperCase(),
           lastModified: new Date().toLocaleDateString(),
         });
 
-        summaryFound = true;
-        break;
+        setIsGeneratingSummary(false);
+        return;
       }
-    }
 
-    if (!summaryFound) {
-      // timed out
+      // Otherwise poll until summary appears or timeout
+      const pollIntervalMs = 3000;
+      const maxPollSeconds = 120; // 2 minutes
+      const start = Date.now();
+      let summaryFound = false;
+
+      while ((Date.now() - start) / 1000 < maxPollSeconds) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+        const polled = await fetch(`/api/documents/${doc.id}`, {
+          method: "GET",
+          credentials: "include"
+        }).then(r => r.json());
+
+        // if (polled?.filePath) polled.fileUrl = getS3Url(polled.filePath);
+        setDoc(polled);
+
+        if (polled?.summary) {
+          let parsedSummary;
+          try {
+            parsedSummary = JSON.parse(polled.summary);
+          } catch {
+            parsedSummary = { overview: polled.summary, keyPoints: [] };
+          }
+
+          setSummary({
+            title: polled.filename,
+            overview: parsedSummary.overview,
+            keyPoints: parsedSummary.keyPoints || [],
+            wordCount: polled.content ? polled.content.split(" ").length : "N/A",
+            estimatedReadTime: polled.content ? Math.ceil(polled.content.split(" ").length / 200) : "N/A",
+            documentType: polled.filename.split(".").pop().toUpperCase(),
+            lastModified: new Date().toLocaleDateString(),
+          });
+
+          summaryFound = true;
+          break;
+        }
+      }
+
+      if (!summaryFound) {
+        // timed out
+        setSummary({
+          title: doc.filename,
+          overview: "Summary generation is still in progress. Please check back in a few moments.",
+          keyPoints: [],
+          wordCount: doc.content ? doc.content.split(" ").length : "N/A",
+          estimatedReadTime: doc.content ? Math.ceil(doc.content.split(" ").length / 200) : "N/A",
+          documentType: doc.filename.split(".").pop().toUpperCase(),
+          lastModified: new Date().toLocaleDateString(),
+        });
+      }
+    } catch (error) {
+      console.error("Error generating summary:", error);
       setSummary({
         title: doc.filename,
-        overview: "Summary generation is still in progress. Please check back in a few moments.",
+        overview: "Unable to regenerate summary at this time. Please try again later.",
         keyPoints: [],
-        wordCount: doc.content ? doc.content.split(" ").length : "N/A",
-        estimatedReadTime: doc.content ? Math.ceil(doc.content.split(" ").length / 200) : "N/A",
+        wordCount: "N/A",
+        estimatedReadTime: "N/A",
         documentType: doc.filename.split(".").pop().toUpperCase(),
         lastModified: new Date().toLocaleDateString(),
       });
+    } finally {
+      setIsGeneratingSummary(false);
     }
-  } catch (error) {
-    console.error("Error generating summary:", error);
-    setSummary({
-      title: doc.filename,
-      overview: "Unable to regenerate summary at this time. Please try again later.",
-      keyPoints: [],
-      wordCount: "N/A",
-      estimatedReadTime: "N/A",
-      documentType: doc.filename.split(".").pop().toUpperCase(),
-      lastModified: new Date().toLocaleDateString(),
-    });
-  } finally {
-    setIsGeneratingSummary(false);
-  }
-};
+  };
 
 
   // Generate summary when switching to summary tab
@@ -461,7 +462,7 @@ const generateSummary = async () => {
     if (ext === "txt") {
       return (
         <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto">
-          <pre className="whitespace-pre-wrap text-gray-900 dark:text-gray-100 p-6 font-mono text-sm leading-relaxed">
+          <pre className="whitespace-pre-wrap text-gray-900 dark:text-gray-100 p-6 font-mono text-sm leading-relaxed max-w-5xl mx-auto">
             {doc.content}
           </pre>
         </div>
@@ -481,12 +482,32 @@ const generateSummary = async () => {
       );
     }
 
+   
+
+    // if (ext === "docx") {
+    //   return (
+    //     <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto">
+    //       <div
+    //         className="prose prose-gray dark:prose-invert max-w-none p-6"
+    //         dangerouslySetInnerHTML={{ __html: docxHtml || "<p>Loading...</p>" }}
+    //       />
+    //     </div>
+    //   );
+    // }
+
     if (ext === "docx") {
       return (
-        <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto">
-          <div
-            className="prose prose-gray dark:prose-invert max-w-none p-6"
-            dangerouslySetInnerHTML={{ __html: docxHtml || "<p>Loading...</p>" }}
+        <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <DocViewer
+            documents={[
+              {
+                uri: doc.fileUrl,
+                fileType: "docx",
+                fileName: doc.filename,
+              },
+            ]}
+            pluginRenderers={DocViewerRenderers}
+            style={{ height: "100%" }}
           />
         </div>
       );

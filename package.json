@@ -43,6 +43,7 @@
     "pdfjs-dist": "^2.16.105",
     "prisma": "^6.18.0",
     "react": "19.1.0",
+    "react-doc-viewer": "^0.1.15",
     "react-dom": "19.1.0",
     "stripe": "^20.1.2",
     "tailwind-merge": "^3.3.1"

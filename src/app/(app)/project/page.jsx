@@ -330,7 +330,7 @@ function ProjectPageInner() {
         <ModalHeader>
           <ModalTitle>Upload Documents</ModalTitle>
         </ModalHeader>
-        <ModalContent>
+        <ModalContent className="flex flex-col max-h-[calc(100vh-8rem)] overflow-hidden">
           <FileUpload
             onUpload={(file, visibility) => handleFileUpload(file, userId, projectId, visibility)}
             onClose={() => setUploadModalOpen(false)}
