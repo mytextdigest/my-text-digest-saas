@@ -148,6 +148,35 @@ const Header = ({
   const hasApiKeyChanged = apiKey !== currentApiKey;
   const isApiKeyEmpty = !apiKey.trim();
   const hasCurrentApiKey = currentApiKey && currentApiKey.trim().length > 0;
+
+
+  const storageUsedBytes = subscription?.user?.storageUsedBytes
+    ? Number(subscription.user.storageUsedBytes)
+    : 0;
+
+  const storageLimitBytes = subscription?.plan
+    ? subscription.plan.storageLimitGb * 1024 * 1024 * 1024
+    : 0;
+
+  const usagePercent =
+    storageLimitBytes > 0
+      ? Math.min(
+          Math.round((storageUsedBytes / storageLimitBytes) * 100),
+          100
+        )
+      : 0;
+
+  const formatGb = bytes =>
+    (bytes / (1024 * 1024 * 1024)).toFixed(1);
+
+  const formatStorage = (bytes) => {
+    const mb = bytes / (1024 * 1024);
+    if (mb < 1024) {
+      return `${Math.round(mb)} MB`;
+    }
+    return `${(mb / 1024).toFixed(1)} GB`;
+  };
+
   return (
     <motion.header
       initial={{ y: -100, opacity: 0 }}
@@ -313,6 +342,40 @@ const Header = ({
                                   {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
                                 </p>
                               )}
+
+                              {subscription?.plan && (
+                                <div className="mt-3">
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                                    {formatStorage(storageUsedBytes)} /{" "}
+                                    {subscription.plan.storageLimitGb} GB used
+                                  </p>
+                                </div>
+                              )}
+
+
+                              {/* {subscription?.plan && (
+                                <div className="mt-3 space-y-1">
+                                  <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
+                                    <span>
+                                      {formatGb(storageUsedBytes)} GB of{" "}
+                                      {subscription.plan.storageLimitGb} GB used
+                                    </span>
+                                    <span>{usagePercent}%</span>
+                                  </div>
+
+                                  <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                    <div
+                                      className={cn(
+                                        "h-full transition-all",
+                                        usagePercent < 80 && "bg-green-500",
+                                        usagePercent >= 80 && usagePercent < 95 && "bg-yellow-500",
+                                        usagePercent >= 95 && "bg-red-500"
+                                      )}
+                                      style={{ width: `${usagePercent}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )} */}
                             </div>
                           ) : (
                             <p className="text-sm text-gray-500 mt-1">
