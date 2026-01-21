@@ -9,7 +9,7 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const docId = params.id;
+    const { id:docId } = await params;
     if (!docId) {
       return NextResponse.json({ error: "Invalid document ID" }, { status: 400 });
     }

@@ -13,7 +13,7 @@ export async function POST(req, { params }) {
       );
     }
 
-    const documentId = params.id;
+    const { id:documentId } = await params;
 
     // 2) Fetch the document (ensure ownership)
     const doc = await prisma.document.findFirst({
