@@ -95,7 +95,6 @@ function ProjectPageInner() {
   };
 
   async function handleFileUpload(file, userId, projectId, visibility) {
-    //  Get presigned URL from backend
     const presignRes = await fetch("/api/s3/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -103,48 +102,51 @@ function ProjectPageInner() {
         fileName: file.name,
         fileType: file.type,
         userId,
+        projectId,
       }),
     });
   
-    const { url, fields, key } = await presignRes.json();
-    // const visibility = file?.visibility || "private";
+    const presignData = await presignRes.json();
   
-    // 2️⃣ Upload file directly to S3
+    // 🔴 Handle early rejection
+    if (!presignRes.ok) {
+      if (presignData?.error === "DUPLICATE_FILENAME") {
+        throw new Error(presignData.message || "Duplicate filename");
+      }
+  
+      throw new Error("Failed to prepare upload");
+    }
+  
+    const { url, fields, key } = presignData;
+  
+    // ✅ Safe now
     const formData = new FormData();
     Object.entries(fields).forEach(([k, v]) => formData.append(k, v));
     formData.append("file", file);
-
-    console.log("Presigned URL:", url);
-    console.log("Presigned fields:", fields);
   
     const upload = await fetch(url, { method: "POST", body: formData });
     if (!upload.ok) {
       const errText = await upload.text();
-      console.error("❌ S3 upload failed:", errText);
       throw new Error("S3 upload failed");
     }
   
-    console.log("✅ File uploaded to S3:", key);
-  
-    // 3️⃣ Call ingestion API
     const ingestForm = new FormData();
     ingestForm.append("s3Key", key);
     ingestForm.append("projectId", projectId);
     ingestForm.append("visibility", visibility);
-
-    console.log("Uploading file:", { name: file.name, type: file.type, userId });
-
   
     const ingestRes = await fetch("/api/documents/ingest", {
       method: "POST",
       body: ingestForm,
     });
   
-    if (!ingestRes.ok) throw new Error("Ingestion failed");
-    // console.log("📄 Ingestion started for:", file.name);
-
-    await loadDocuments(); 
+    if (!ingestRes.ok) {
+      throw new Error("Ingestion failed");
+    }
+  
+    await loadDocuments();
   }
+  
 
   const handleDelete = async (id) => {
     const docToDelete = docs.find(doc => doc.id === id);

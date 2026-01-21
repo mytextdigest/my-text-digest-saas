@@ -112,7 +112,10 @@ const FileUpload = ({
     setFiles(prev => prev.filter(f => f.id !== id));
   };
 
+  // Upload Files
   const uploadFiles = async () => {
+    let hadErrors = false;
+
     const validFiles = files.filter(f => f.status === 'pending');
     if (validFiles.length === 0) return;
 
@@ -154,24 +157,33 @@ const FileUpload = ({
           )
         );
       } catch (error) {
-        console.error('Upload failed:', error);
-  
-        setFiles(prev =>
-          prev.map(f =>
-            f.id === fileItem.id
-              ? { ...f, status: 'error', errors: ['Upload failed'] }
-              : f
-          )
-        );
+
+          hadErrors = true;
+
+          console.error('Upload failed:', error);
+        
+          const message =
+            error?.message ||
+            'Upload failed';
+        
+          setFiles(prev =>
+            prev.map(f =>
+              f.id === fileItem.id
+                ? { ...f, status: 'error', errors: [message] }
+                : f
+            )
+          );
       }
     }
   
     setUploading(false);
   
     // Close modal after successful uploads
-    setTimeout(() => {
-      onClose();
-    }, 1000);
+    if (!hadErrors) {
+      setTimeout(() => {
+        onClose();
+      }, 800);
+    }
   };
   
 
@@ -320,7 +332,13 @@ const FileUpload = ({
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        <p 
+                          className={cn(
+                            "text-sm font-medium text-gray-900 truncate",
+                            fileItem.status === 'pending' && "dark:text-gray-100 ",
+                            fileItem.status === 'error' && "dark:text-gray-400 "
+                          )}
+                        >
                           {fileItem.name}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
