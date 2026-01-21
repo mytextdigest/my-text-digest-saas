@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 import LogoutButton from '../ui/LogoutButton';
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
+import { useSession } from "next-auth/react";
+
 
 const Header = ({
   onSearch,
@@ -28,6 +30,8 @@ const Header = ({
   const [status, setStatus] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [loadingSubscription, setLoadingSubscription] = useState(true);
+  const { data: session } = useSession();
+
 
   useEffect(() => {
     setIsClient(true);
@@ -243,7 +247,7 @@ const Header = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed top-20 right-4 z-50 w-80"
+              className="fixed top-20 right-4 z-50 w-full max-w-md"
             >
               <Card className="shadow-xl border border-gray-200 dark:border-gray-700">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -398,6 +402,15 @@ const Header = ({
 
                       {/* Divider */}
                       <div className="border-t border-gray-200 dark:border-gray-700" />
+
+                      {session?.user?.email && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          Signed in as
+                          <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                            {session.user.email}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Logout */}
                       <LogoutButton />
