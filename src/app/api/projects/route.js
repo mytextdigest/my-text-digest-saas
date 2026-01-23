@@ -39,22 +39,47 @@ export async function POST(req) {
   const { name, description } = body || {};
 
   if (!name || typeof name !== "string") {
-    return NextResponse.json({ error: "Invalid project name" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid project name" },
+      { status: 400 }
+    );
   }
 
-  // Find user id
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+  });
+
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const project = await prisma.project.create({
-    data: {
-      name,
-      description: description || null,
-      userId: user.id,
-    },
-  });
+  try {
+    const project = await prisma.project.create({
+      data: {
+        name,
+        description: description || null,
+        userId: user.id,
+      },
+    });
 
-  return NextResponse.json({ success: true, id: project.id });
+    return NextResponse.json({ success: true, id: project.id });
+
+  } catch (err) {
+    // 👇 Duplicate project name
+    if (err.code === "P2002") {
+      return NextResponse.json(
+        {
+          error: "PROJECT_ALREADY_EXISTS",
+          message: "A project with this name already exists."
+        },
+        { status: 409 }
+      );
+    }
+
+    console.error("Create project failed:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
 }

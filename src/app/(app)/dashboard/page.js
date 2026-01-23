@@ -55,27 +55,36 @@ export default function ProjectsPage() {
 
   const handleCreate = async (name, description) => {
     try {
-      if (typeof window !== "undefined" && window.api) {
-        const result = await window.api.createProject(name, description);
-        if (result.success) await loadProjects();
-        return;
-      }
-  
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, description }),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err?.error || 'Create failed');
-      }
+  
       const result = await res.json();
-      if (result.success) await loadProjects();
+  
+      if (!res.ok) {
+        return {
+          error: true,
+          message:
+            result.message ||
+            (result.error === "PROJECT_ALREADY_EXISTS"
+              ? "A project with this name already exists."
+              : "Failed to create project.")
+        };
+      }
+  
+      await loadProjects();
+      return { success: true };
+  
     } catch (err) {
-      console.error('Create project failed:', err);
+      return {
+        error: true,
+        message: "Network error. Please try again."
+      };
     }
   };
+  
 
   const handleDelete = async (id, name) => {
     setDeleteTarget({ id, name });

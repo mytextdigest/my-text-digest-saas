@@ -5,10 +5,22 @@ import { motion } from 'framer-motion';
 export default function CreateProjectModal({ onClose, onCreate }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [error, setError] = useState(null);
 
-  const handleSubmit = () => {
-    if (!name.trim()) return alert('Please enter a project name.');
-    onCreate(name, description);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      setError("Please enter a project name.");
+      return;
+    }
+  
+    const result = await onCreate(name, description);
+  
+    if (result?.error) {
+      setError(result.message || "Failed to create project.");
+      return;
+    }
+  
     onClose();
   };
 
@@ -35,6 +47,11 @@ export default function CreateProjectModal({ onClose, onCreate }) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+        {error && (
+          <div className="mb-3 text-sm text-red-600 dark:text-red-400">
+            {error}
+          </div>
+        )}
 
         <div className="flex justify-end gap-3">
           <button
