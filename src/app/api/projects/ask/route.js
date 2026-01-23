@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
+import { activeRequests } from "@/lib/requestCancellation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -75,7 +76,15 @@ export async function POST(req) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { projectId, question } = body || {};
+    const { projectId, question, requestId} = body || {};
+
+    const controller = new AbortController();
+    activeRequests.set(requestId, controller);
+
+    req.signal?.addEventListener("abort", () => {
+      controller.abort();
+      activeRequests.delete(requestId);
+    });
 
     if (!projectId || !question)
       return NextResponse.json({ error: "Missing projectId or question" }, { status: 400 });
@@ -285,12 +294,17 @@ BM25 retrieval has selected the most relevant chunks.
 
       console.log("🟦 Sending BM25 mode request to GPT");
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages,
-        temperature: 0.3,
-        max_tokens: 800,
-      });
+      const completion = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages,
+          temperature: 0.3,
+          max_tokens: 800
+        },
+        {
+          signal: controller.signal
+        }
+      );
 
       const assistantText = completion?.choices?.[0]?.message?.content?.trim() || "";
 
@@ -319,10 +333,18 @@ BM25 retrieval has selected the most relevant chunks.
     // 7) Inline embed small missing counts (≤10)
     if (missing.length > 0) {
       for (const chunk of missing) {
-        const embRes = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: String(chunk.text).slice(0, 8000),
-        });
+        if (controller.signal.aborted) {
+          return NextResponse.json({ success: false, cancelled: true });
+        }
+        const embRes = await openai.embeddings.create(
+          {
+            model: "text-embedding-3-small",
+            input: String(chunk.text).slice(0, 8000),
+          },
+          {
+            signal: controller.signal
+          }
+        );
         const emb = embRes.data[0].embedding;
         await prisma.chunk.update({
           where: { id: chunk.id },
@@ -333,10 +355,15 @@ BM25 retrieval has selected the most relevant chunks.
     }
 
     // 8) Embed question
-    const qEmb = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: question,
-    });
+    const qEmb = await openai.embeddings.create(
+      {
+        model: "text-embedding-3-small",
+        input: question,
+      },
+      {
+        signal: controller.signal
+      }
+    );
     const queryEmbedding = qEmb.data[0].embedding;
 
     // 9) Similarity (cosine)
@@ -413,12 +440,26 @@ Response format:
     const userMsgForModel = { role: "user", content: `Question: ${question}\n\nContext:\n${context}` };
 
     // 12) GPT call
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [systemMsg, ...memoryMsgs, userMsgForModel],
-      temperature: 0.3,
-      max_tokens: 800,
-    });
+    let completion;
+    try {
+      completion = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [systemMsg, ...memoryMsgs, userMsgForModel],
+          temperature: 0.3,
+          max_tokens: 800,
+        },
+        { signal: controller.signal }
+      );
+    } catch (err) {
+      if (controller.signal.aborted) {
+        console.log("🛑 project ask cancelled:", requestId);
+        return NextResponse.json({ success: false, cancelled: true });
+      }
+      throw err;
+    } finally {
+      activeRequests.delete(requestId);
+    }
 
     const assistantText = (completion?.choices?.[0]?.message?.content || "")
       .replace(/\*/g, "")

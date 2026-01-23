@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageCircle, Trash2, Bot, User } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Bot, User, Square } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -18,6 +18,9 @@ const ChatInterface = ({ className, projectId }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const currentRequestIdRef = useRef(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // --- Fetch project messages on mount ---
   useEffect(() => {
@@ -61,7 +64,7 @@ const ChatInterface = ({ className, projectId }) => {
     if (!inputValue.trim() || !projectId) return;
   
     const userMessage = {
-      id: Date.now(),
+      id: `user-${Date.now()}`,
       type: 'user',
       content: inputValue,
       timestamp: new Date()
@@ -72,43 +75,94 @@ const ChatInterface = ({ className, projectId }) => {
     setInputValue('');
     setIsTyping(true);
   
+    // 🟢 Create AbortController + requestId
+    const controller = new AbortController();
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    abortControllerRef.current = controller;
+    currentRequestIdRef.current = requestId;
+  
     try {
       const res = await fetch("/api/projects/ask", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, question })
+        signal: controller.signal,
+        body: JSON.stringify({ projectId, question, requestId })
       }).then(r => r.json());
   
+      // ⛔ Ignore stale / cancelled responses
+      if (
+        controller.signal.aborted ||
+        currentRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+  
       if (res.success) {
-        const aiMessage = {
-          id: Date.now() + 1,
-          type: "assistant",
-          content: res.answer,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } else {
-        const aiMessage = {
-          id: Date.now() + 1,
-          type: "assistant",
-          content: res.error || "Failed to get response.",
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, aiMessage]);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            type: "assistant",
+            content: res.answer,
+            timestamp: new Date()
+          }
+        ]);
+      } else if (!res.cancelled) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            type: "assistant",
+            content: res.error || "Failed to get response.",
+            timestamp: new Date()
+          }
+        ]);
       }
     } catch (err) {
-      const aiMessage = {
-        id: Date.now() + 1,
-        type: "assistant",
-        content: "Error contacting project chat API.",
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, aiMessage]);
+      if (err.name !== "AbortError") {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            type: "assistant",
+            content: "Error contacting project chat API.",
+            timestamp: new Date()
+          }
+        ]);
+      }
     } finally {
       setIsTyping(false);
+      setIsCancelling(false);
+      abortControllerRef.current = null;
+      currentRequestIdRef.current = null;
     }
   };
+
+
+  // --- Cancle Request ---
+  const handleCancelRequest = async () => {
+    if (!currentRequestIdRef.current) return;
+  
+    setIsCancelling(true);
+    setIsTyping(false);
+  
+    // Abort fetch immediately
+    abortControllerRef.current?.abort();
+  
+    // Notify backend (best-effort)
+    await fetch("/api/cancel", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: currentRequestIdRef.current })
+    }).catch(() => {});
+  
+    currentRequestIdRef.current = null;
+    abortControllerRef.current = null;
+  };
+  
+  
 
   // --- Clear project chat ---
   const handleClearChat = () => {
@@ -363,14 +417,25 @@ const ChatInterface = ({ className, projectId }) => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <Button
-                  type="submit"
-                  size="icon"
-                  disabled={!inputValue.trim() || isTyping}
-                  className="bg-blue-500 hover:bg-blue-600 text-white border-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
+                {isTyping ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={handleCancelRequest}
+                    className="bg-gray-600 hover:bg-gray-700 text-white"
+                  >
+                    <Square className="h-4 w-4 fill-current" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    size="icon"
+                    disabled={!inputValue.trim()}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                )}
               </motion.div>
             </div>
 

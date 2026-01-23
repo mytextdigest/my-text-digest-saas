@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -35,6 +35,13 @@ function DocumentContent() {
   const [docxHtml, setDocxHtml] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [showClearDialog, setShowClearDialog] = useState(false);
+
+  const abortControllerRef = useRef(null);
+  const currentRequestIdRef = useRef(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+
+
 
   useEffect(() => {
     if (!id) {
@@ -354,6 +361,8 @@ function DocumentContent() {
     }
   }, [activeTab, doc, summary, isGeneratingSummary, id]);
 
+
+  //  --- Asking document queries ----
   const handleAsk = async (e) => {
     e.preventDefault();
     if (!question.trim()) return;
@@ -364,52 +373,103 @@ function DocumentContent() {
       content: question,
       timestamp: new Date()
     };
-    setChat((prev) => [...prev, userMessage]);
+    setChat(prev => [...prev, userMessage]);
     setQuestion("");
     setIsTyping(true);
+  
+    const controller = new AbortController();
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  
+    abortControllerRef.current = controller;
+    currentRequestIdRef.current = requestId;
   
     try {
       const res = await fetch(`/api/documents/${id}/ask`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, conversationId })
+        signal: controller.signal,
+        body: JSON.stringify({
+          question,
+          conversationId,
+          requestId
+        })
       }).then(r => r.json());
   
-      if (res?.success) {
-        const assistantMessage = {
-          id: `assistant-${Date.now()}-${Math.random()}`,
-          role: "assistant",
-          content: res.answer,
-          timestamp: new Date()
-        };
-        setChat((prev) => [...prev, assistantMessage]);
+      // ignore cancelled / stale responses
+      if (
+        controller.signal.aborted ||
+        currentRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
   
-        // update conversationId if backend created a new one
+      if (res?.success) {
+        setChat(prev => [
+          ...prev,
+          {
+            id: `assistant-${Date.now()}-${Math.random()}`,
+            role: "assistant",
+            content: res.answer,
+            timestamp: new Date()
+          }
+        ]);
+  
         if (res.conversationId && res.conversationId !== conversationId) {
           setConversationId(res.conversationId);
         }
-      } else {
-        const errMsg = {
-          id: Date.now() + 1,
-          role: "assistant",
-          content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
-          timestamp: new Date()
-        };
-        setChat((prev) => [...prev, errMsg]);
+      } else if (!res?.cancelled) {
+        setChat(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            role: "assistant",
+            content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
+            timestamp: new Date()
+          }
+        ]);
       }
-    } catch (error) {
-      const errorMessage = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: "Sorry, I encountered an error while processing your question. Please try again.",
-        timestamp: new Date()
-      };
-      setChat((prev) => [...prev, errorMessage]);
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        setChat(prev => [
+          ...prev,
+          {
+            id: Date.now(),
+            role: "assistant",
+            content: "Sorry, I encountered an error while processing your question.",
+            timestamp: new Date()
+          }
+        ]);
+      }
     } finally {
       setIsTyping(false);
+      setIsCancelling(false);
+      abortControllerRef.current = null;
+      currentRequestIdRef.current = null;
     }
   };
+
+  const handleCancelRequest = async () => {
+    if (!currentRequestIdRef.current) return;
+  
+    setIsCancelling(true);
+    setIsTyping(false);
+  
+    abortControllerRef.current?.abort();
+  
+    await fetch("/api/cancel", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestId: currentRequestIdRef.current
+      })
+    }).catch(() => {});
+  
+    abortControllerRef.current = null;
+    currentRequestIdRef.current = null;
+  };
+  
 
 
 
@@ -717,14 +777,25 @@ function DocumentContent() {
                     className="flex-1"
                     disabled={isTyping}
                   />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    disabled={!question.trim() || isTyping}
-                    className="flex-shrink-0"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  {isTyping ? (
+                    <Button
+                      type="button"
+                      size="icon"
+                      onClick={handleCancelRequest}
+                      className="flex-shrink-0 bg-gray-600 hover:bg-gray-700 text-white"
+                    >
+                      <Square className="h-4 w-4 fill-current" />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="submit"
+                      size="icon"
+                      disabled={!question.trim()}
+                      className="flex-shrink-0"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </form>
             </div>

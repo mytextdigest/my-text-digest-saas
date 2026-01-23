@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
+import { activeRequests } from "@/lib/requestCancellation";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -16,7 +17,15 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id:documentId } = await params;
-    const { question, conversationId: incomingConvId } = await req.json();
+    const { question, conversationId: incomingConvId, requestId } = await req.json();
+
+    const controller = new AbortController();
+    activeRequests.set(requestId, controller);
+
+    req.signal?.addEventListener("abort", () => {
+      controller.abort();
+      activeRequests.delete(requestId);
+    });
 
     if (!documentId || !question)
       return NextResponse.json({ error: "Missing params" }, { status: 400 });
@@ -107,6 +116,9 @@ export async function POST(req, { params }) {
     // 6) REGENERATE MISSING OR INVALID EMBEDDINGS
     // ----------------------------
     for (const chunk of allChunks) {
+      if (controller.signal.aborted) {
+        return NextResponse.json({ success: false, cancelled: true });
+      }
       if (!chunk.text) continue;
 
       let needsRegen = true;
@@ -117,10 +129,15 @@ export async function POST(req, { params }) {
       }
 
       if (needsRegen) {
-        const embRes = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: chunk.text.slice(0, 8000)
-        });
+        const embRes = await openai.embeddings.create(
+          {
+            model: "text-embedding-3-small",
+            input: chunk.text.slice(0, 8000)
+          },
+          {
+            signal: controller.signal
+          }
+        );
 
         const emb = embRes.data[0].embedding;
 
@@ -136,10 +153,15 @@ export async function POST(req, { params }) {
     // ----------------------------
     // 7) EMBED THE USER QUESTION
     // ----------------------------
-    const questionEmbeddingRes = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: `Provide information about: ${question}`
-    });
+    const questionEmbeddingRes = await openai.embeddings.create(
+      {
+        model: "text-embedding-3-small",
+        input: `Provide information about: ${question}`
+      },
+      {
+        signal: controller.signal
+      }
+    );
 
     const queryEmbedding = questionEmbeddingRes.data[0].embedding;
 
@@ -228,23 +250,42 @@ export async function POST(req, { params }) {
     // ----------------------------
     let completion;
     try {
-      completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [systemMsg, ...memoryMsgs, userMsgGPT],
-        temperature: 0.2,
-        max_tokens: 700
-      });
+      completion = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [systemMsg, ...memoryMsgs, userMsgGPT],
+          temperature: 0.2,
+          max_tokens: 700
+        },
+        {
+          signal: controller.signal
+        }
+      );
     } catch (err) {
+      // 1. Cancellation is NOT an error
+      if (controller.signal.aborted) {
+        console.log("🛑 document ask cancelled:", requestId);
+    
+        // mark user message as done or cancelled (your choice)
+        await prisma.message.update({
+          where: { id: userMsg.id },
+          data: { status: "done" } // or "cancelled" if you add that enum
+        });
+    
+        return NextResponse.json({ success: false, cancelled: true });
+      }
+    
+      // 2. Real error (quota, network, OpenAI failure, etc.)
       console.error("OpenAI error:", err);
-
+    
       await prisma.message.update({
         where: { id: userMsg.id },
         data: { status: "error" }
       });
-
+    
       const errorMsg =
         "There was a problem contacting the AI model. Please try again later.";
-
+    
       await prisma.message.create({
         data: {
           conversationId,
@@ -253,8 +294,11 @@ export async function POST(req, { params }) {
           status: "error"
         }
       });
-
+    
       return NextResponse.json({ success: false, error: errorMsg });
+    }
+    finally {
+      activeRequests.delete(requestId);
     }
 
     const assistantText =
