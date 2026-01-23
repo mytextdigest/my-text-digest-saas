@@ -38,7 +38,7 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const projectId = params.id;
+  const { id:projectId } = await params;
   if (!projectId) return NextResponse.json({ success: false, error: "Invalid project id" }, { status: 400 });
 
   // Verify project belongs to user
