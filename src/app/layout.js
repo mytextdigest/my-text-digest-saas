@@ -31,7 +31,7 @@ export default function RootLayout({ children }) {
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <SessionProviderWrapper>
-          <ThemeInitializer />
+          {/* <ThemeInitializer /> */}
           {children}
         </SessionProviderWrapper>
       </body>
