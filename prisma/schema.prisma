@@ -31,6 +31,8 @@ model OtpToken {
   email     String
   token     String
   expiresAt DateTime
+
+  @@index([email])
 }
 
 model Setting {

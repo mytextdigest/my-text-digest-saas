@@ -30,7 +30,7 @@ export default function SignupPage() {
       });
 
       if (res.status === 201) {
-        router.push("/auth/signin");
+        router.push(`/auth/verify-otp?email=${encodeURIComponent(email)}`);
       } else {
         const msg = await res.text();
         setError(msg || "Signup failed");

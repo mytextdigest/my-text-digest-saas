@@ -1,3 +1,4 @@
+@custom-variant dark (&:where(.dark, .dark *));
 @import "tailwindcss";
 @import "../styles/scrollbar.css";
 
@@ -230,6 +231,55 @@
 .border-warning-800 { border-color: var(--warning-800); }
 .border-warning-900 { border-color: var(--warning-900); }
 
+
+/* .light {
+  --background: #ffffff;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #3b82f6;
+} */
+
+
+/* Also support system preference as fallback */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --background: #0a0f1c;
+    --foreground: #f8fafc;
+    --card: #1a202c;
+    --card-foreground: #f8fafc;
+    --popover: #1a202c;
+    --popover-foreground: #f8fafc;
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --secondary: #2d3748;
+    --secondary-foreground: #f8fafc;
+    --muted: #2d3748;
+    --muted-foreground: #a0aec0;
+    --accent: #2d3748;
+    --accent-foreground: #f8fafc;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #4a5568;
+    --input: #4a5568;
+    --ring: #3b82f6;
+  }
+}
+
 /* Dark mode styles - using .dark class instead of media query */
 .dark {
   --background: #0a0f1c;
@@ -253,37 +303,12 @@
   --ring: #3b82f6;
 }
 
-/* Also support system preference as fallback */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --background: #0a0f1c;
-    --foreground: #f8fafc;
-    --card: #1a202c;
-    --card-foreground: #f8fafc;
-    --popover: #1a202c;
-    --popover-foreground: #f8fafc;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --secondary: #2d3748;
-    --secondary-foreground: #f8fafc;
-    --muted: #2d3748;
-    --muted-foreground: #a0aec0;
-    --accent: #2d3748;
-    --accent-foreground: #f8fafc;
-    --destructive: #ef4444;
-    --destructive-foreground: #ffffff;
-    --border: #4a5568;
-    --input: #4a5568;
-    --ring: #3b82f6;
-  }
-}
-
 * {
   border-color: hsl(var(--border));
 }
 
 body {
-  background: var(--background);
+  background: var(--background) !important;
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-feature-settings: "rlig" 1, "calt" 1;

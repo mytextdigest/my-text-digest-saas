@@ -9,6 +9,8 @@ import LogoutButton from '../ui/LogoutButton';
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
+import { applyTheme, getStoredTheme, setStoredTheme } from "@/lib/theme";
+
 
 
 const Header = ({
@@ -18,6 +20,7 @@ const Header = ({
   className
 }) => {
   const router = useRouter();
+  const [theme, setTheme] = useState("system");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [activeTab, setActiveTab] = useState('general'); // 'general' or 'apikey'
@@ -36,6 +39,11 @@ const Header = ({
   useEffect(() => {
     setIsClient(true);
     loadApiKey();
+  }, []);
+
+  useEffect(() => {
+    const stored = getStoredTheme();
+    setTheme(stored);
   }, []);
 
   useEffect(() => {
@@ -196,8 +204,10 @@ const Header = ({
         <div className="flex h-16 items-center justify-between">
           {/* Logo and Title */}
           <motion.div 
-            className="flex items-center space-x-3"
+            className="flex items-center space-x-3 cursor-pointer"
+            onClick={() => router.push('/dashboard')}
             whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white shadow-md">
@@ -256,9 +266,9 @@ const Header = ({
                     variant="ghost"
                     size="icon"
                     onClick={() => setSettingsOpen(false)}
-                    className="h-6 w-6"
+                    className="h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-5 w-5 text-gray-900 dark:text-white" />
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -317,6 +327,26 @@ const Header = ({
                         <div className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-md">
                           <span className="text-sm text-gray-600 dark:text-gray-300">Auto</span>
                         </div>
+                        {/* <div className="flex gap-1 rounded-md bg-gray-100 dark:bg-gray-700 p-1">
+                          {["light", "dark", "system"].map(option => (
+                            <button
+                              key={option}
+                              onClick={() => {
+                                setTheme(option);
+                                setStoredTheme(option);
+                                applyTheme(option);
+                              }}
+                              className={cn(
+                                "px-3 py-1 text-sm rounded-md transition",
+                                theme === option
+                                  ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow"
+                                  : "text-gray-600 dark:text-gray-300 hover:text-gray-900"
+                              )}
+                            >
+                              {option === "system" ? "Auto" : option[0].toUpperCase() + option.slice(1)}
+                            </button>
+                          ))}
+                        </div> */}
                       </div>
 
                       {/* Subscription */}
@@ -404,13 +434,22 @@ const Header = ({
                       <div className="border-t border-gray-200 dark:border-gray-700" />
 
                       {session?.user?.email && (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          Signed in as
-                          <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                            {session.user.email}
+                          <div className="space-y-1">
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              Signed in as
+                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {session.user.email}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => router.push("/settings/change-password")}
+                              className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              Change password
+                            </button>
                           </div>
-                        </div>
-                      )}
+                        )}
 
                       {/* Logout */}
                       <LogoutButton />

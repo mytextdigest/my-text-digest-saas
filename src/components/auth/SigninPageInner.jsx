@@ -35,6 +35,11 @@ export default function SigninPageInner() {
     setLoading(false);
 
     if (res?.error) {
+      if (res.error === "EMAIL_NOT_VERIFIED") {
+        router.push(`/auth/verify-otp?email=${encodeURIComponent(email)}`);
+        return;
+      }
+
       setError(res.error);
     } else {
       router.push(callbackUrl);  // IMPORTANT
@@ -92,6 +97,17 @@ export default function SigninPageInner() {
                     className="absolute right-3 top-2.5 text-gray-400"
                   >
                     {showPassword ? <EyeOff /> : <Eye />}
+                  </button>
+                </div>
+
+                {/* Forgot password */}
+                <div className="flex justify-end mt-1">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/auth/forgot-password")}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Forgot password?
                   </button>
                 </div>
               </div>
