@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2 } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -660,10 +660,26 @@ function DocumentContent() {
     <div className="chat-container">
       <Card className="chat-container">
         <CardHeader className="flex-shrink-0 pb-2">
-          <CardTitle className="flex items-center space-x-2">
-            <MessageCircle className="h-5 w-5 text-primary-600" />
-            <span>Document Analysis</span>
-          </CardTitle>
+        <div className="flex items-center justify-between w-full mb-4">
+            <CardTitle className="flex items-center space-x-2">
+              <MessageCircle className="h-5 w-5 text-primary-600" />
+              <span>Document Analysis</span>
+            </CardTitle>
+            
+            {/* Clear Chat Button - Only show when chat has messages */}
+            {chat.some(msg => msg.role !== "system") && (
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleClearChat}
+                  className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </motion.div>
+            )}
+          </div>
 
           {/* Tab Navigation */}
           <div className="flex space-x-1 mt-4">
@@ -750,7 +766,7 @@ function DocumentContent() {
               </div>
 
               {/* Chat-specific footer - Fixed at bottom */}
-              {chat.some(msg => msg.role !== "system") && (
+              {/* {chat.some(msg => msg.role !== "system") && (
                 <div className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-950/30 flex justify-between items-center">
                   <div className="flex items-center space-x-2 text-yellow-700 dark:text-yellow-300">
                     <AlertCircle className="h-4 w-4" />
@@ -764,7 +780,7 @@ function DocumentContent() {
                     Clear Chat
                   </Button>
                 </div>
-              )}
+              )} */}
 
               {/* Input Area - Fixed at bottom */}
               <form onSubmit={handleAsk} className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700">
