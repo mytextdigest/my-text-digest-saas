@@ -9,7 +9,7 @@ import LogoutButton from '../ui/LogoutButton';
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
-import { applyTheme, getStoredTheme, setStoredTheme } from "@/lib/theme";
+// import { applyTheme, getStoredTheme, setStoredTheme } from "@/lib/theme";
 
 
 
@@ -41,10 +41,10 @@ const Header = ({
     loadApiKey();
   }, []);
 
-  useEffect(() => {
-    const stored = getStoredTheme();
-    setTheme(stored);
-  }, []);
+  // useEffect(() => {
+  //   const stored = getStoredTheme();
+  //   setTheme(stored);
+  // }, []);
 
   useEffect(() => {
     if (activeTab === "general") {

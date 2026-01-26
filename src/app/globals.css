@@ -232,7 +232,7 @@
 .border-warning-900 { border-color: var(--warning-900); }
 
 
-/* .light {
+.light {
   --background: #ffffff;
   --foreground: #171717;
   --card: #ffffff;
@@ -252,7 +252,7 @@
   --border: #e2e8f0;
   --input: #e2e8f0;
   --ring: #3b82f6;
-} */
+}
 
 
 /* Also support system preference as fallback */

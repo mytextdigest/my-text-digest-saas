@@ -1,13 +1,13 @@
-"use client";
+// "use client";
 
-import { applyTheme, getStoredTheme } from "@/lib/theme";
-import { useEffect } from "react";
+// import { applyTheme, getStoredTheme } from "@/lib/theme";
+// import { useEffect } from "react";
 
-export default function ThemeInitializer() {
-  useEffect(() => {
-    const theme = getStoredTheme();
-    applyTheme(theme);
-  }, []);
+// export default function ThemeInitializer() {
+//   useEffect(() => {
+//     const theme = getStoredTheme();
+//     applyTheme(theme);
+//   }, []);
 
-  return null; // nothing to render
-}
+//   return null; // nothing to render
+// }
