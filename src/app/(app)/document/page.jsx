@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2 } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -39,6 +39,8 @@ function DocumentContent() {
   const abortControllerRef = useRef(null);
   const currentRequestIdRef = useRef(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+
 
 
 
@@ -512,6 +514,16 @@ function DocumentContent() {
   };
 
 
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+
 
 
   const renderDocument = () => {
@@ -718,50 +730,100 @@ function DocumentContent() {
           {/* Content Area - Chat or Summary */}
           {activeTab === 'chat' ? (
             <div className="chat-container">
-              {/* Messages Area - Properly constrained with scrolling */}
               <div className="chat-messages-area p-4 space-y-4 bg-gray-50 dark:bg-gray-900/50 chat-scrollbar">
-              {chat.map((message) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] p-3 rounded-lg ${
-                      message.role === 'user'
-                        ? 'bg-primary-600 text-white'
-                        : message.role === 'system'
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800'
-                        : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
-                    }`}
+                {chat.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                   >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    {message.timestamp && (
-                      <p className="text-xs opacity-70 mt-1">
-                        {message.timestamp.toLocaleTimeString()}
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                    {/* Bubble + Actions */}
+                    <div
+                      className={`flex flex-col ${
+                        message.role === "user" ? "items-end" : "items-start"
+                      } max-w-[80%]`}
+                    >
+                      {/* Bubble */}
+                      <div
+                        className={cn(
+                          "p-3 rounded-lg",
+                          message.role === "user"
+                            ? "bg-primary-600 text-white"
+                            : message.role === "system"
+                            ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
+                            : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700"
+                        )}
+                      >
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          {message.content}
+                        </p>
 
-              {isTyping && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex justify-start"
-                >
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        {message.timestamp && (
+                          <p className="text-xs opacity-70 mt-1">
+                            {message.timestamp.toLocaleTimeString()}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Copy action (always visible, space reserved) */}
+                      <div className="mt-1 h-7 flex items-center">
+                        <button
+                          onClick={async () => {
+                            const success = await copyToClipboard(message.content);
+                            if (success) {
+                              setCopiedId(message.id);
+                              setTimeout(() => setCopiedId(null), 1500);
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors cursor-pointer",
+                            message.role === "user"
+                              ? "bg-primary-600/10 text-primary-600 hover:bg-primary-600/20 dark:text-primary-400"
+                              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                          )}
+                          aria-label="Copy message"
+                        >
+                          {copiedId === message.id ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                ))}
+
+                {isTyping && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-start"
+                  >
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                        <div
+                          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.1s" }}
+                        ></div>
+                        <div
+                          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.2s" }}
+                        ></div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 <div ref={chatEndRef} />
               </div>
 

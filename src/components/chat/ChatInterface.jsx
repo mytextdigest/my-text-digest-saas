@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageCircle, Trash2, Bot, User, Square } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -21,6 +21,8 @@ const ChatInterface = ({ className, projectId }) => {
   const abortControllerRef = useRef(null);
   const currentRequestIdRef = useRef(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+
 
   // --- Fetch project messages on mount ---
   useEffect(() => {
@@ -201,6 +203,15 @@ const ChatInterface = ({ className, projectId }) => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   // Empty state component
   const EmptyState = () => (
     <div className="flex items-center justify-center h-full py-12">
@@ -332,24 +343,64 @@ const ChatInterface = ({ className, projectId }) => {
                       )}
                     </motion.div>
 
-                    {/* Message Bubble */}
-                    <div className={cn("flex flex-col", message.type === 'user' ? 'items-end' : 'items-start')}>
+                    {/* Message Bubble + Actions */}
+                    <div
+                      className={cn(
+                        "flex flex-col",
+                        message.type === "user" ? "items-end" : "items-start"
+                      )}
+                    >
+                      {/* Bubble */}
                       <div
                         className={cn(
-                          "rounded-2xl px-4 py-3 overflow-hidden",
-                          message.type === 'user'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
+                          "rounded-2xl px-4 py-3",
+                          message.type === "user"
+                            ? "bg-blue-500 text-white"
+                            : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700"
                         )}
                       >
                         <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
                           {message.content}
                         </p>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 px-2">
-                        {formatTime(message.timestamp)}
-                      </p>
+
+                      {/* Copy action (always visible, space reserved) */}
+                      <div className="mt-1 h-7 flex items-center">
+                        <button
+                          onClick={async () => {
+                            const success = await copyToClipboard(message.content);
+                            if (success) {
+                              setCopiedId(message.id);
+                              setTimeout(() => setCopiedId(null), 1500);
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors",
+                            message.type === "user"
+                              ? "bg-blue-500/10 text-blue-100 hover:bg-blue-500/20"
+                              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                          )}
+                          aria-label="Copy message"
+                        >
+                          {copiedId === message.id ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
+
+
+
+
+
                   </motion.div>
                 ))}
               </AnimatePresence>

@@ -37,50 +37,50 @@ const TwoColumnLayout = ({
         onApiKeySet={refreshApiKeyStatus}
       />
 
-      <div className={cn("h-full", hasApiKey === false && "pointer-events-none opacity-50", className)}>
+    <div className={cn("h-full", hasApiKey === false && "pointer-events-none opacity-50", className)}>
       {/* Mobile Tab Navigation */}
-      <div className="lg:hidden mb-4">
-        <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-          <Button
-            variant={activeTab === 'documents' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('documents')}
-            className={cn(
-              "flex-1 flex items-center justify-center space-x-2",
-              activeTab === 'documents'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            <FileText className="h-4 w-4" />
-            <span>{leftTitle}</span>
-          </Button>
-          <Button
-            variant={activeTab === 'chat' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('chat')}
-            className={cn(
-              "flex-1 flex items-center justify-center space-x-2",
-              activeTab === 'chat'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span>{rightTitle}</span>
-          </Button>
+        <div className="lg:hidden mb-4">
+          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+            <Button
+              variant={activeTab === 'documents' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('documents')}
+              className={cn(
+                "flex-1 flex items-center justify-center space-x-2",
+                activeTab === 'documents'
+                  ? "text-white dark:text-gray-200"
+                  : "text-gray-600 dark:text-gray-400"
+              )}
+            >
+              <FileText className="h-4 w-4" />
+              <span>{leftTitle}</span>
+            </Button>
+            <Button
+              variant={activeTab === 'chat' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('chat')}
+              className={cn(
+                "flex-1 flex items-center justify-center space-x-2",
+                activeTab === 'chat'
+                  ? "text-white dark:text-gray-200"
+                  : "text-gray-600 dark:text-gray-400"
+              )}
+            >
+              <MessageCircle className="h-4 w-4" />
+              <span>{rightTitle}</span>
+            </Button>
+          </div>
         </div>
-      </div>
 
       {/* Desktop Two-Column Layout */}
-      <div className="hidden lg:flex h-full space-x-6">
+      <div className="hidden lg:flex h-full w-full space-x-6">
         {/* Left Column - Documents */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
           className="flex-1 min-w-0" // min-w-0 prevents flex item from overflowing
-          style={{ flexBasis: '60%' }}
+          style={{ flexBasis: '50%' }}
         >
           <div className="h-full">
             {leftColumn}
@@ -96,7 +96,7 @@ const TwoColumnLayout = ({
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
           className="flex-1 min-w-0"
-          style={{ flexBasis: '40%' }}
+          style={{ flexBasis: '50%' }}
         >
           <div className="h-full">
             {rightColumn}

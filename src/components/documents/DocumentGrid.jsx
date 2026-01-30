@@ -167,7 +167,7 @@ const DocumentGrid = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               leftIcon={<Search className="h-4 w-4" />}
-              className="w-full sm:w-64"
+              className="w-full"
             />
 
             <select
@@ -273,6 +273,8 @@ const DocumentGrid = ({
               <List className="h-4 w-4" />
             </Button>
           </div>
+
+          
         </div>
 
         {/* Results Count */}
