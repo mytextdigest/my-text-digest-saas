@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
 import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
+import MessageActions from './MessageActions';
+import ExpandedMessageModal from './ExpandedMessageModal';
 
 const ChatInterface = ({ className, projectId }) => {
   const [messages, setMessages] = useState([]);
@@ -22,6 +24,16 @@ const ChatInterface = ({ className, projectId }) => {
   const currentRequestIdRef = useRef(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+
+  const [expandedMessage, setExpandedMessage] = useState(null);
+
+  const openExpanded = (message) => {
+    setExpandedMessage(message);
+  };
+  
+  const closeExpanded = () => {
+    setExpandedMessage(null);
+  };
 
 
   // --- Fetch project messages on mount ---
@@ -343,20 +355,21 @@ const ChatInterface = ({ className, projectId }) => {
                       )}
                     </motion.div>
 
-                    {/* Message Bubble + Actions */}
+                    {/* Message Bubble */}
                     <div
                       className={cn(
-                        "flex flex-col",
-                        message.type === "user" ? "items-end" : "items-start"
+                        "flex flex-col max-w-[85%]",
+                        message.type === 'user' ? 'items-end' : 'items-start'
                       )}
                     >
-                      {/* Bubble */}
+
+                      {/* MESSAGE BUBBLE */}
                       <div
                         className={cn(
-                          "rounded-2xl px-4 py-3",
-                          message.type === "user"
-                            ? "bg-blue-500 text-white"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700"
+                          "rounded-2xl px-4 py-3 overflow-hidden",
+                          message.type === 'user'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
                         )}
                       >
                         <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
@@ -364,41 +377,14 @@ const ChatInterface = ({ className, projectId }) => {
                         </p>
                       </div>
 
-                      {/* Copy action (always visible, space reserved) */}
-                      <div className="mt-1 h-7 flex items-center">
-                        <button
-                          onClick={async () => {
-                            const success = await copyToClipboard(message.content);
-                            if (success) {
-                              setCopiedId(message.id);
-                              setTimeout(() => setCopiedId(null), 1500);
-                            }
-                          }}
-                          className={cn(
-                            "flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors",
-                            message.type === "user"
-                              ? "bg-blue-500/10 text-blue-100 hover:bg-blue-500/20"
-                              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
-                          )}
-                          aria-label="Copy message"
-                        >
-                          {copiedId === message.id ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                      {/* ACTION BUTTONS BELOW */}
+                      <MessageActions
+                        content={message.content}
+                        onExpand={() => openExpanded(message)}
+                        align={message.type === 'user' ? "right" : "left"}
+                      />
+
                     </div>
-
-
-
 
 
                   </motion.div>
@@ -506,6 +492,13 @@ const ChatInterface = ({ className, projectId }) => {
         cancelText="Cancel"
         isLoading={isDeleting}
       />
+
+      <ExpandedMessageModal
+        open={!!expandedMessage}
+        message={expandedMessage}
+        onClose={closeExpanded}
+      />
+      
     </Card>
   );
 };

@@ -12,6 +12,8 @@ import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
 import DocViewer, { DocViewerRenderers } from "react-doc-viewer";
+import MessageActions from "@/components/chat/MessageActions";
+import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
 
 
 
@@ -40,6 +42,16 @@ function DocumentContent() {
   const currentRequestIdRef = useRef(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+
+  const [expandedMessage, setExpandedMessage] = useState(null);
+
+  const openExpanded = (message) => {
+    setExpandedMessage(message);
+  };
+  
+  const closeExpanded = () => {
+    setExpandedMessage(null);
+  };
 
 
 
@@ -734,71 +746,66 @@ function DocumentContent() {
                 {chat.map((message) => (
                   <motion.div
                     key={message.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    className={cn(
+                      "flex items-start space-x-3",
+                      message.role === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'
+                    )}
                   >
-                    {/* Bubble + Actions */}
-                    <div
-                      className={`flex flex-col ${
-                        message.role === "user" ? "items-end" : "items-start"
-                      } max-w-[80%]`}
+                    {/* Avatar */}
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.1 }}
+                      className={cn(
+                        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md",
+                        message.role === 'user'
+                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
+                          : 'bg-gradient-to-br from-purple-500 to-purple-600'
+                      )}
                     >
-                      {/* Bubble */}
+                      {message.role === 'user' ? (
+                        <User className="w-4 h-4 text-white" />
+                      ) : (
+                        <Bot className="w-4 h-4 text-white" />
+                      )}
+                    </motion.div>
+
+                    {/* Message Bubble */}
+                    <div
+                      className={cn(
+                        "flex flex-col max-w-[85%]",
+                        message.role === 'user' ? 'items-end' : 'items-start'
+                      )}
+                    >
+
+                      {/* MESSAGE BUBBLE */}
                       <div
                         className={cn(
-                          "p-3 rounded-lg",
-                          message.role === "user"
-                            ? "bg-primary-600 text-white"
-                            : message.role === "system"
-                            ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800"
-                            : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700"
+                          "rounded-2xl px-4 py-3 overflow-hidden",
+                          message.role === 'user'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
                         )}
                       >
-                        <p className="text-sm whitespace-pre-wrap break-words">
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
                           {message.content}
                         </p>
-
-                        {message.timestamp && (
-                          <p className="text-xs opacity-70 mt-1">
-                            {message.timestamp.toLocaleTimeString()}
-                          </p>
-                        )}
                       </div>
 
-                      {/* Copy action (always visible, space reserved) */}
-                      <div className="mt-1 h-7 flex items-center">
-                        <button
-                          onClick={async () => {
-                            const success = await copyToClipboard(message.content);
-                            if (success) {
-                              setCopiedId(message.id);
-                              setTimeout(() => setCopiedId(null), 1500);
-                            }
-                          }}
-                          className={cn(
-                            "flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors cursor-pointer",
-                            message.role === "user"
-                              ? "bg-primary-600/10 text-primary-600 hover:bg-primary-600/20 dark:text-primary-400"
-                              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
-                          )}
-                          aria-label="Copy message"
-                        >
-                          {copiedId === message.id ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                      {/* ACTION BUTTONS BELOW */}
+                      <MessageActions
+                        content={message.content}
+                        onExpand={() => openExpanded(message)}
+                        align={message.role === 'user' ? "right" : "left"}
+                      />
+
                     </div>
+
+
                   </motion.div>
                 ))}
 
@@ -1045,6 +1052,12 @@ function DocumentContent() {
           />
         </div>
       )}
+
+      <ExpandedMessageModal
+        open={!!expandedMessage}
+        message={expandedMessage}
+        onClose={closeExpanded}
+      />
     </Layout>
   );
 }
