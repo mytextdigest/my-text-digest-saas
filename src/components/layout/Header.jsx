@@ -20,7 +20,7 @@ const Header = ({
   className
 }) => {
   const router = useRouter();
-  const [theme, setTheme] = useState("system");
+  const [theme, setTheme] = useState("dark");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [activeTab, setActiveTab] = useState('general'); // 'general' or 'apikey'
@@ -55,6 +55,36 @@ const Header = ({
         .finally(() => setLoadingSubscription(false));
     }
   }, [activeTab]);
+
+  const loadTheme = () => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      setTheme(savedTheme);
+      applyTheme(savedTheme);
+    }
+  };
+
+  const applyTheme = (newTheme) => {
+    if (typeof window === 'undefined') return;
+    
+    const root = document.documentElement;
+    
+    if (newTheme === 'light') {
+      root.classList.remove('dark');
+      root.classList.add('light');
+    } else { // dark
+      root.classList.remove('light');
+      root.classList.add('dark');
+    }
+  };
+
+  const handleThemeChange = (newTheme) => {
+    console.log('Theme changing to:', newTheme);
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    applyTheme(newTheme);
+    console.log('Theme changed. Current classes:', document.documentElement.classList.toString());
+  };
 
   const loadApiKey = async () => {
     console.log("Loading api key ...")
@@ -317,36 +347,37 @@ const Header = ({
                       className="space-y-6"
                     >
                       {/* Theme Info */}
-                      <div className="flex items-center justify-between">
+                      <div className="space-y-3">
                         <div>
-                          <p className="font-medium text-gray-900 dark:text-gray-100">Theme</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Follows your system preference
+                          <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">Theme</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Choose your preferred color scheme
                           </p>
                         </div>
-                        <div className="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-md">
-                          <span className="text-sm text-gray-600 dark:text-gray-300">Auto</span>
+                        <div className="flex flex-col space-y-2">
+                          <button
+                            onClick={() => handleThemeChange('light')}
+                            className={cn(
+                              "px-4 py-2.5 rounded-lg text-left transition-all",
+                              theme === 'light'
+                                ? "bg-primary-600 text-white"
+                                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                            )}
+                          >
+                            <span className="font-medium">☀️ Light</span>
+                          </button>
+                          <button
+                            onClick={() => handleThemeChange('dark')}
+                            className={cn(
+                              "px-4 py-2.5 rounded-lg text-left transition-all",
+                              theme === 'dark'
+                                ? "bg-primary-600 text-white"
+                                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                            )}
+                          >
+                            <span className="font-medium">🌙 Dark</span>
+                          </button>
                         </div>
-                        {/* <div className="flex gap-1 rounded-md bg-gray-100 dark:bg-gray-700 p-1">
-                          {["light", "dark", "system"].map(option => (
-                            <button
-                              key={option}
-                              onClick={() => {
-                                setTheme(option);
-                                setStoredTheme(option);
-                                applyTheme(option);
-                              }}
-                              className={cn(
-                                "px-3 py-1 text-sm rounded-md transition",
-                                theme === option
-                                  ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow"
-                                  : "text-gray-600 dark:text-gray-300 hover:text-gray-900"
-                              )}
-                            >
-                              {option === "system" ? "Auto" : option[0].toUpperCase() + option.slice(1)}
-                            </button>
-                          ))}
-                        </div> */}
                       </div>
 
                       {/* Subscription */}
