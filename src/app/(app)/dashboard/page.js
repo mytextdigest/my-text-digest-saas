@@ -3,16 +3,21 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
 import { motion } from 'framer-motion';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Search, SortDesc } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import DeleteProjectModal from '@/components/modals/DeleteProjectModal';
 import CreateProjectModal from '@/components/modals/CreateProjectModal';
+import { Input } from '@/components/ui/Input';
+import { cn } from '@/lib/utils';
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // {id, name}
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('date'); // 'name' or 'date'
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
   const router = useRouter();
 
   useEffect(() => {
@@ -118,6 +123,34 @@ export default function ProjectsPage() {
     }
   };
 
+  const toggleSort = (field) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  // Filter and sort projects
+  const filteredProjects = projects
+    .filter(project => {
+      const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           (project.description && project.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchesSearch;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      
+      if (sortBy === 'name') {
+        comparison = a.name.localeCompare(b.name);
+      } else if (sortBy === 'date') {
+        comparison = new Date(a.created_at) - new Date(b.created_at);
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
   return (
     <Layout>
       <div className="max-w-7xl mx-auto px-6 py-8">
@@ -132,7 +165,7 @@ export default function ProjectsPage() {
           </div>
 
           {/* Projects Section Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Projects</h2>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
@@ -150,10 +183,90 @@ export default function ProjectsPage() {
             
           </div>
 
+          {/* Search and Sort Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            {/* Search Bar */}
+            <div className="flex-1 relative">
+
+              <Input
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                leftIcon={<Search className="h-4 w-4" />}
+                className="w-full pr-10"   // space for clear button
+              />
+
+              {/* CLEAR BUTTON */}
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="
+                    absolute right-2 top-1/2 -translate-y-1/2
+
+                    text-xs font-medium
+                    px-2.5 py-1
+                    rounded-full
+
+                    bg-gray-100 text-gray-600
+                    hover:bg-gray-200 hover:text-gray-800
+
+                    dark:bg-gray-800 dark:text-gray-300
+                    dark:hover:bg-gray-700 dark:hover:text-gray-100
+
+                    transition
+                    select-none
+                  "
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  Clear Search
+                </button>
+              )}
+
+            </div>
+
+            {/* Sort Controls */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant={sortBy === 'name' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => toggleSort('name')}
+                className={cn(
+                  "flex items-center space-x-1",
+                  sortBy === 'name'
+                    ? "text-white dark:text-gray-200"
+                    : "text-gray-600 dark:text-gray-400"
+                )}
+              >
+                <span>Name</span>
+                {sortBy === 'name' && (
+                  sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />
+                )}
+              </Button>
+
+              <Button
+                variant={sortBy === 'date' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => toggleSort('date')}
+                className={cn(
+                  "flex items-center space-x-1",
+                  sortBy === 'date'
+                    ? "text-white dark:text-gray-200"
+                    : "text-gray-600 dark:text-gray-400"
+                )}
+              >
+                <span>Date</span>
+                {sortBy === 'date' && (
+                  sortOrder === 'asc' ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
           {/* Project Count and Loading */}
           <div className="flex items-center space-x-4 mb-6">
             <div className="text-sm text-gray-500 dark:text-gray-400">
-              {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+              {filteredProjects.length} {filteredProjects.length === 1 ? 'project' : 'projects'}
             </div>
             {loading && (
               <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
@@ -164,7 +277,7 @@ export default function ProjectsPage() {
           </div>
 
           {/* Empty State */}
-          {projects.length === 0 && !loading && (
+          {filteredProjects.length === 0 && !loading && (
             <div className="text-center py-20">
               <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
                 <Plus className="w-8 h-8 text-gray-600 dark:text-gray-400" />
@@ -186,9 +299,9 @@ export default function ProjectsPage() {
           )}
 
           {/* Projects Grid */}
-          {projects.length > 0 && (
+          {filteredProjects.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {projects.map((project) => (
+              {filteredProjects.map((project) => (
                 <div
                   key={project.id}
                   className="group relative bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-300 hover:shadow-lg overflow-hidden"

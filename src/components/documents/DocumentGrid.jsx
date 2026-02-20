@@ -162,13 +162,43 @@ const DocumentGrid = ({
         <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 sm:gap-4">
           {/* Search and Filter */}
           <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4 flex-1">
-            <Input
-              placeholder="Search documents..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              leftIcon={<Search className="h-4 w-4" />}
-              className="w-full"
-            />
+            <div className="relative w-full">
+
+              <Input
+                placeholder="Search documents..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                leftIcon={<Search className="h-4 w-4" />}
+                className="w-full pr-16"   // space for clear button
+              />
+
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="
+                    absolute right-2 top-1/2 -translate-y-1/2
+
+                    text-xs font-medium
+                    px-2.5 py-1
+                    rounded-full
+
+                    bg-gray-100 text-gray-600
+                    hover:bg-gray-200 hover:text-gray-800
+
+                    dark:bg-gray-800 dark:text-gray-300
+                    dark:hover:bg-gray-700 dark:hover:text-gray-100
+
+                    transition
+                    select-none
+                  "
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  Clear
+                </button>
+              )}
+
+            </div>
 
             <select
               value={filterType}
