@@ -16,10 +16,18 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
 
   const handleSignup = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (!acceptedTerms) {
+      setError("You must accept the Terms & Conditions to continue.");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -126,6 +134,40 @@ export default function SignupPage() {
                   {error}
                 </p>
               )}
+
+              {/* Accept Terms */}
+              <div className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="
+                    mt-1 h-4 w-4 rounded
+                    border-border
+                    text-primary-600
+                    focus:ring-primary-500
+                  "
+                />
+                <label htmlFor="terms" className="text-muted-foreground leading-relaxed">
+                  I agree to the{" "}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    className="text-primary-600 hover:underline font-medium"
+                  >
+                    Terms & Conditions
+                  </a>{" "}
+                  and{" "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    className="text-primary-600 hover:underline font-medium"
+                  >
+                    Privacy Policy
+                  </a>.
+                </label>
+              </div>
 
               <Button
                 type="submit"
