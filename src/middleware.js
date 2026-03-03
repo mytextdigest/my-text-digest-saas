@@ -20,5 +20,18 @@ export const config = {
     "/dashboard/:path*",
     "/project/:path*",
     "/document/:path*",
+
+    // Secure APIs
+    "/api/documents/:path*",
+    "/api/projects/:path*",
+    "/api/settings/:path*",
+    "/api/subscription/:path*",
+    "/api/s3/:path*",
+    "/api/cancel/:path*",
+    "/api/test-session/:path*",
+    "/api/stripe/checkout/:path*",
+    "/api/stripe/portal/:path*",
+    "/api/auth/change-password/:path*"
   ],
 };
+
