@@ -59,7 +59,7 @@ export default function SigninPageInner() {
             My Text Digest
           </h1>
           <p className="text-sm text-primary-600 font-medium mt-1">
-            Web Application
+            Cloud Version
           </p>
           <p className="text-muted-foreground text-sm mt-3">
             Sign in to access your projects, documents, and chat history.
