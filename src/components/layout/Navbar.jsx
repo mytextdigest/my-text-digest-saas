@@ -26,7 +26,7 @@ export default function Navbar() {
               className="flex cursor-pointer items-center gap-2.5"
               whileHover={{ opacity: 0.85 }}
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl shadow-md">
+              <div className="flex h-16 w-12 items-center justify-center">
                 <Image
                   src="/logo.png"
                   alt="My Text Digest Logo"

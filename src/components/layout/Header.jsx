@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, Search, Settings, X, Key, CheckCircle2, XCircle, Loader2, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { FileText, Search, Settings, X, Key, CheckCircle2, XCircle, Loader2, Eye, EyeOff, ExternalLink, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -481,6 +481,15 @@ const Header = ({
                             </button>
                           </div>
                         )}
+
+                        {/* Help & Support */}
+                        <button
+                          onClick={() => window.open("https://www.mytextdigest.com/help", "_blank")}
+                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          <HelpCircle className="w-4 h-4" />
+                          Help & Support
+                        </button>
 
                       {/* Logout */}
                       <LogoutButton />
