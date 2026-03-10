@@ -9,6 +9,7 @@ import LogoutButton from '../ui/LogoutButton';
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
+import Image from 'next/image';
 // import { applyTheme, getStoredTheme, setStoredTheme } from "@/lib/theme";
 
 
@@ -240,9 +241,17 @@ const Header = ({
             whileTap={{ scale: 0.98 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white shadow-md">
-              <FileText className="h-6 w-6" />
+            <div className="flex items-center justify-center rounded-lg bg-white dark:bg-gray-900 shadow-md overflow-hidden">
+              <Image
+                src="/logo.png"
+                alt="My Text Digest Logo"
+                width={55}
+                height={55}
+                className="object-contain"
+                priority
+              />
             </div>
+
             <div>
               <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 My Text Digest
