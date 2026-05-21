@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { cn, formatDate, getFileIcon } from '@/lib/utils';
 
 const PROCESSING_STATUSES = new Set([
-  'queued', 'extracting', 'running_ocr', 'chunked', 'embedding', 'embedded', 'summarizing',
+  'queued', 'extracting', 'running_ocr', 'chunked', 'embedding', 'embedded', 'summarizing', 'clustering',
 ]);
 
 const DocumentCard = ({
@@ -68,6 +68,8 @@ const DocumentCard = ({
         return { label: 'Generating embeddings…', icon: Loader2, spin: true, className: 'text-blue-500 dark:text-blue-400' };
       case 'summarizing':
         return { label: 'Generating summary…', icon: Loader2, spin: true, className: 'text-blue-500 dark:text-blue-400' };
+      case 'clustering':
+        return { label: 'Matching topic…', icon: Loader2, spin: true, className: 'text-purple-600 dark:text-purple-400' };
       case 'ocr_failed':
         return { label: 'OCR failed', icon: AlertCircle, spin: false, className: 'text-red-600 dark:text-red-400' };
       case 'chunk_failed':

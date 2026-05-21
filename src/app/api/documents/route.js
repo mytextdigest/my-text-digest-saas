@@ -23,11 +23,11 @@ export async function GET(req) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 🔹 Now fetch documents by userId + projectId
+    // 🔹 Now fetch documents by userId + projectId (include topic assignment)
     const documents = await prisma.document.findMany({
       where: {
         projectId,
-        userId: dbUser.id, // ✅ use userId instead of email
+        userId: dbUser.id,
       },
       select: {
         id: true,
@@ -36,15 +36,27 @@ export async function GET(req) {
         projectId: true,
         starred: true,
         selected: true,
-        visibility: true
+        visibility: true,
+        status: true,
+        content: true,
+        topicDocument: {
+          select: {
+            confidence: true,
+            topic: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // 🔹 Format for frontend
+    // 🔹 Format for frontend — flatten topic info
     const formatted = documents.map((d) => ({
       ...d,
-      created_at: d.createdAt.toISOString(),
+      created_at:      d.createdAt.toISOString(),
+      topicId:         d.topicDocument?.topic?.id ?? null,
+      topicName:       d.topicDocument?.topic?.name ?? null,
+      topicConfidence: d.topicDocument?.confidence ?? null,
+      topicDocument:   undefined, // strip the nested object
     }));
 
     return NextResponse.json(formatted);

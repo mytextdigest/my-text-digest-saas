@@ -1,8 +1,8 @@
 'use client'
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Layout from '@/components/layout/Layout';
-import DocumentGrid from '@/components/documents/DocumentGrid';
+import TopicsView from '@/components/topics/TopicsView';
 import FileUpload from '@/components/documents/FileUpload';
 import { Modal, ModalHeader, ModalTitle, ModalContent } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -15,38 +15,57 @@ import EditDocumentModal from '@/components/modals/EditDocumentModal';
 import EditProjectModal from '@/components/modals/EditProjectModal';
 import { useSession } from "next-auth/react";
 
+const PROCESSING_STATUSES = new Set([
+  'queued', 'extracting', 'running_ocr', 'chunked', 'embedding', 'embedded', 'summarizing', 'clustering',
+]);
+
 
 function ProjectPageInner() {
-  const [docs, setDocs] = useState([]);
+  const [docs, setDocs]       = useState([]);
+  const [topics, setTopics]   = useState([]);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter]       = useState('all');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [showRenameModal, setShowRenameModal]   = useState(false);
   const [documentToRename, setDocumentToRename] = useState(null);
-  const [isRenaming, setIsRenaming] = useState(false);
+  const [isRenaming, setIsRenaming]             = useState(false);
 
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
-  const [isEditingProject, setIsEditingProject] = useState(false);
+  const [isEditingProject, setIsEditingProject]         = useState(false);
 
-  const router = useRouter();
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const projectId = searchParams.get("id");
+  const projectId    = searchParams.get("id");
 
   const { data: session } = useSession();
   const userId = session?.user?.id;
 
+  // Polling ref — holds the setInterval id
+  const pollRef = useRef(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
   useEffect(() => {
     setDocs([]);
+    setTopics([]);
     setProject(null);
+    stopPolling();
     if (projectId) {
       loadProject();
       loadDocuments();
+      loadTopics();
     }
+    return () => stopPolling();
   }, [projectId]);
 
   const loadProject = async () => {
@@ -79,27 +98,63 @@ function ProjectPageInner() {
   const loadDocuments = async () => {
     try {
       setLoading(true);
-  
+
       const res = await fetch(`/api/documents?projectId=${projectId}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
-  
+
       if (!res.ok) {
         console.error('Failed to fetch documents:', res.status);
         return;
       }
-  
+
       const data = await res.json();
-      console.log("Check visivility", data)
+      setDocs(prev => {
+        // Detect newly-ready documents (were processing, now ready) → reload topics
+        const prevIds = new Set(prev.filter(d => PROCESSING_STATUSES.has(d.status)).map(d => d.id));
+        const newlyReady = data.filter(d => d.status === 'ready' && prevIds.has(d.id));
+        if (newlyReady.length > 0) {
+          loadTopics();
+        }
+        return data;
+      });
 
-      setDocs(data);
-
-      // console.log("Loaded document: ", data)
+      // Start polling if any documents are still processing; stop if all done
+      const anyProcessing = data.some(d => PROCESSING_STATUSES.has(d.status));
+      if (anyProcessing && !pollRef.current) {
+        pollRef.current = setInterval(async () => {
+          const r = await fetch(`/api/documents?projectId=${projectId}`);
+          if (!r.ok) return;
+          const fresh = await r.json();
+          setDocs(prev => {
+            const prevProcessing = new Set(prev.filter(d => PROCESSING_STATUSES.has(d.status)).map(d => d.id));
+            const newlyReadyNow = fresh.filter(d => d.status === 'ready' && prevProcessing.has(d.id));
+            if (newlyReadyNow.length > 0) loadTopics();
+            return fresh;
+          });
+          const stillProcessing = fresh.some(d => PROCESSING_STATUSES.has(d.status));
+          if (!stillProcessing) stopPolling();
+        }, 3000);
+      } else if (!anyProcessing) {
+        stopPolling();
+      }
     } catch (err) {
       console.error('Failed to load documents:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTopics = async () => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/topics`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setTopics(data);
+    } catch (err) {
+      console.error('Failed to load topics:', err);
     }
   };
 
@@ -281,6 +336,30 @@ function ProjectPageInner() {
     }
   };
 
+  const handleRecluster = async () => {
+    try {
+      await fetch(`/api/projects/${projectId}/recluster`, { method: 'POST' });
+      // Start polling to pick up clustering status updates
+      if (!pollRef.current) {
+        pollRef.current = setInterval(async () => {
+          const r = await fetch(`/api/documents?projectId=${projectId}`);
+          if (!r.ok) return;
+          const fresh = await r.json();
+          setDocs(prev => {
+            const prevProcessing = new Set(prev.filter(d => PROCESSING_STATUSES.has(d.status)).map(d => d.id));
+            const newlyReadyNow = fresh.filter(d => d.status === 'ready' && prevProcessing.has(d.id));
+            if (newlyReadyNow.length > 0) loadTopics();
+            return fresh;
+          });
+          const stillProcessing = fresh.some(d => PROCESSING_STATUSES.has(d.status));
+          if (!stillProcessing) { stopPolling(); loadTopics(); }
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Recluster failed:', err);
+    }
+  };
+
   const handleEditProject = () => setShowEditProjectModal(true);
 
   const handleSaveProject = async (name, description) => {
@@ -306,15 +385,6 @@ function ProjectPageInner() {
       setIsEditingProject(false);
     }
   };
-
-  // const filteredDocs = activeFilter === 'starred' ? docs.filter(d => d.starred) : docs;
-
-  const filteredDocs =
-    activeFilter === 'starred'
-      ? docs.filter(d => d.starred)
-      : activeFilter === 'unselected'
-      ? docs.filter(d => d.selected === 0 || d.selected === false || d.selected === null)
-      : docs;
 
   const documentPanel = (
     <motion.div
@@ -367,16 +437,20 @@ function ProjectPageInner() {
         </p>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <DocumentGrid
-          documents={filteredDocs}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <TopicsView
+          topics={topics}
+          documents={docs}
           loading={loading}
+          projectId={projectId}
           onUpload={() => setUploadModalOpen(true)}
           onView={(doc) => router.push(`/document?id=${doc.id}`)}
           onDelete={handleDelete}
           onToggleStar={handleToggleStar}
           onToggleSelect={handleToggleSelect}
           onRename={handleRename}
+          onTopicsChange={async () => { await loadDocuments(); await loadTopics(); }}
+          onReclusterUnassigned={handleRecluster}
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
         />

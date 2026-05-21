@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { generateSignedUrl } from "@/lib/s3SignedUrl";
+import { computeDocumentEmbedding, adjustTopicOnDocumentRemoval } from "@/lib/topicUtils";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -63,28 +64,42 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
-    const session = await getServerSession();
-    if (!session?.user?.email)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  
-    const { id: id } = await params;
-    
-    if (!id) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
-  
-    const doc = await prisma.document.findFirst({
-      where: { id, user: { email: session.user.email } },
-    });
-    if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  
-    // Delete document and its relations
-    await prisma.$transaction(async (tx) => {
-      await tx.message.deleteMany({
-        where: { conversation: { documentId: id } },
-      });
-      await tx.conversation.deleteMany({ where: { documentId: id } });
-      await tx.chunk.deleteMany({ where: { documentId: id } });
-      await tx.document.delete({ where: { id } });
-    });
-  
-    return NextResponse.json({ success: true });
+  const session = await getServerSession();
+  if (!session?.user?.email)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  if (!id) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+
+  const doc = await prisma.document.findFirst({
+    where: { id, user: { email: session.user.email } },
+    include: {
+      topicDocument: { include: { topic: true } },
+    },
+  });
+  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Adjust topic centroid before deleting (topic may be deleted if this was last doc)
+  if (doc.topicDocument) {
+    try {
+      const docEmbedding = await computeDocumentEmbedding(id);
+      await adjustTopicOnDocumentRemoval(
+        doc.topicDocument.topicId,
+        docEmbedding,
+        null
+      );
+    } catch (err) {
+      console.error("Failed to adjust topic centroid on document delete:", err.message);
+    }
   }
+
+  // Delete document and its relations
+  await prisma.$transaction(async (tx) => {
+    await tx.message.deleteMany({ where: { conversation: { documentId: id } } });
+    await tx.conversation.deleteMany({ where: { documentId: id } });
+    await tx.chunk.deleteMany({ where: { documentId: id } });
+    await tx.document.delete({ where: { id } });
+  });
+
+  return NextResponse.json({ success: true });
+}

@@ -8,6 +8,7 @@ import OpenAI from "openai";
 import nodemailer from "nodemailer";
 import { createStructuredSummary, summarizeChunks } from "./summarize.js";
 import { getOpenAIForDocument } from "./openai.js";
+import { processClusterJobWorker } from "./cluster.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -72,7 +73,7 @@ function startTimer(label, meta = {}) {
 }
 
 async function processChunkJob(job) {
-  const { docId, s3Key, filename, visibility = "private" } = job;
+  const { docId, s3Key, filename, visibility = "private", projectId } = job;
   console.log(`🟦 CHUNK JOB: ${docId} (${visibility})`);
   const endTotal = startTimer("CHUNK JOB TOTAL", { docId });
 
@@ -264,6 +265,7 @@ async function processChunkJob(job) {
         type: "embed",
         docId,
         filename,
+        projectId: projectId || existingDoc.projectId,
       }),
     })
   );
@@ -276,7 +278,7 @@ async function processChunkJob(job) {
 
 
 async function processEmbeddingJob(job) {
-  const { docId, filename } = job;
+  const { docId, filename, projectId } = job;
   console.log(`🟧 EMBEDDING JOB: ${docId}`);
 
   const openai = await getOpenAIForDocument(docId);
@@ -314,7 +316,7 @@ async function processEmbeddingJob(job) {
     data: { status: "embedded" },
   });
 
-  // Enqueue summarization
+  // Enqueue summarization (pass projectId forward for cluster job)
   await sqs.send(
     new SendMessageCommand({
       QueueUrl: QUEUE_URL,
@@ -322,6 +324,7 @@ async function processEmbeddingJob(job) {
         type: "summarize",
         docId,
         filename,
+        projectId,
       }),
     })
   );
@@ -332,7 +335,7 @@ async function processEmbeddingJob(job) {
 
 
 async function processSummarizationJob(job) {
-  const { docId, filename, regenerate = false } = job; 
+  const { docId, filename, projectId, regenerate = false } = job;
 
   const openai = await getOpenAIForDocument(docId);
   // regenerate defaults to false if not provided
@@ -380,12 +383,14 @@ async function processSummarizationJob(job) {
   // Final structured summary
   const structured = await createStructuredSummary(openai, chunkSummaries, filename);
 
-  // Save document summary + mark ready
+  // Save document summary.
+  // For first-time processing: set status to "clustering" (cluster job will set "ready").
+  // For regeneration: set status to "ready" immediately (no re-clustering needed).
   await prisma.document.update({
     where: { id: docId },
     data: {
       summary: JSON.stringify(structured),
-      status: "ready",
+      status: regenerate ? "ready" : "clustering",
     },
   });
 
@@ -437,15 +442,32 @@ async function processSummarizationJob(job) {
     }
   }
 
+  // Enqueue clustering for first-time documents (not regeneration)
+  if (!regenerate) {
+    await sqs.send(
+      new SendMessageCommand({
+        QueueUrl: QUEUE_URL,
+        MessageBody: JSON.stringify({
+          type: "cluster",
+          docId,
+          filename,
+          projectId,
+        }),
+      })
+    );
+    console.log(`🔗 Cluster job enqueued for: ${docId}`);
+  }
+
   console.log(`✅ Summarization complete: ${docId} (regenerate: ${regenerate})`);
   endSummaryTotal();
 }
 
 
 async function processJob(job) {
-  if (job.type === "chunk") return processChunkJob(job);
-  if (job.type === "embed") return processEmbeddingJob(job);
+  if (job.type === "chunk")    return processChunkJob(job);
+  if (job.type === "embed")    return processEmbeddingJob(job);
   if (job.type === "summarize") return processSummarizationJob(job);
+  if (job.type === "cluster")  return processClusterJobWorker(job.docId, job.projectId, job.recluster ?? false);
 
   throw new Error("Unknown job type: " + job.type);
 }
