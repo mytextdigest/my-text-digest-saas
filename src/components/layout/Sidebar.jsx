@@ -44,6 +44,8 @@ const Sidebar = ({
     { id: 'pdf', label: 'PDF Files', count: documentStats?.pdf || 0 },
     { id: 'docx', label: 'Word Documents', count: documentStats?.docx || 0 },
     { id: 'txt', label: 'Text Files', count: documentStats?.txt || 0 },
+    { id: 'xlsx', label: 'Excel Spreadsheets', count: documentStats?.xlsx || 0 },
+    { id: 'csv', label: 'CSV Files', count: documentStats?.csv || 0 },
   ];
 
   return (

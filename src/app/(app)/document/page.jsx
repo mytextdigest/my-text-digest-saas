@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useCallback, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from 'framer-motion';
 import Layout from '@/components/layout/Layout';
@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import PdfViewer from "@/components/documents/PdfViewer";
@@ -60,6 +60,41 @@ function DocumentContent() {
   const scrollDebounceRef = useRef(null);
 
   const ext = doc?.filename?.split('.').pop().toLowerCase() ?? '';
+  const isSpreadsheet = ['csv', 'xlsx', 'xls'].includes(ext);
+
+  // Derive a per-sheet breakdown from chunk metadata stored during ingestion
+  // (workbookName, sheetName, rowRange, columnHeaders — see worker/extractSpreadsheet.js)
+  const sheets = useMemo(() => {
+    if (!isSpreadsheet || !doc?.chunks?.length) return [];
+
+    const bySheet = new Map();
+    for (const chunk of doc.chunks) {
+      const meta = chunk?.metadata;
+      if (!meta?.sheetName) continue;
+
+      const existing = bySheet.get(meta.sheetName);
+      if (!existing) {
+        bySheet.set(meta.sheetName, {
+          sheetName: meta.sheetName,
+          columnHeaders: meta.columnHeaders || [],
+          rowRanges: meta.rowRange ? [meta.rowRange] : [],
+        });
+      } else if (meta.rowRange) {
+        existing.rowRanges.push(meta.rowRange);
+      }
+    }
+
+    return Array.from(bySheet.values()).map((sheet) => {
+      const allRows = sheet.rowRanges
+        .flatMap((range) => range.split('-').map(Number))
+        .filter((n) => !Number.isNaN(n));
+      const rowSpan = allRows.length
+        ? `${Math.min(...allRows)}-${Math.max(...allRows)}`
+        : null;
+      return { ...sheet, rowSpan };
+    });
+  }, [isSpreadsheet, doc?.chunks]);
+
   const totalPages = ext === 'pdf'
     ? pdfTotalPages
     : doc?.content
@@ -1123,6 +1158,40 @@ function DocumentContent() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Sheets Breakdown (spreadsheet documents only) */}
+                  {isSpreadsheet && sheets.length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
+                        <Sheet className="h-4 w-4 text-gray-500" />
+                        <span>Sheets ({sheets.length})</span>
+                      </h3>
+                      <div className="space-y-3">
+                        {sheets.map((sheet) => (
+                          <div
+                            key={sheet.sheetName}
+                            className="rounded-md border border-gray-200 dark:border-gray-700 p-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                                {sheet.sheetName}
+                              </span>
+                              {sheet.rowSpan && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  Rows {sheet.rowSpan}
+                                </span>
+                              )}
+                            </div>
+                            {sheet.columnHeaders.length > 0 && (
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
+                                Columns: {sheet.columnHeaders.join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Overview */}
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">

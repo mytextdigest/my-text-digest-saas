@@ -1,6 +1,7 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { extractPdfText } from "./extractPdf.js";
+import { extractSpreadsheetChunks } from "./extractSpreadsheet.js";
 import { runOCR } from "./runOcr.js";
 import mammoth from "mammoth";
 import { PrismaClient } from "@prisma/client";
@@ -112,10 +113,25 @@ async function processChunkJob(job) {
   // 3. Extract + sanitize text
   // -----------------------------
   let rawText = "";
+  let sheetChunks = null; // set for spreadsheet docs — bypasses generic chunkText()
 
   const endExtract = startTimer("TEXT EXTRACTION", { docId, filename });
 
-  if (filename.endsWith(".pdf")) {
+  const isSpreadsheet =
+    filename.endsWith(".xlsx") ||
+    filename.endsWith(".xls") ||
+    filename.endsWith(".csv");
+
+  if (isSpreadsheet) {
+    const { chunks: extractedChunks, fullText } = extractSpreadsheetChunks(
+      buffer,
+      filename,
+      chunkSize
+    );
+    sheetChunks = extractedChunks;
+    rawText = fullText;
+    endExtract();
+  } else if (filename.endsWith(".pdf")) {
     rawText = await extractPdfText(buffer);
 
     // Detect scanned PDF: text layer is absent or too short to be useful
@@ -175,11 +191,19 @@ async function processChunkJob(job) {
   // -----------------------------
   // 4. Prepare chunks
   // -----------------------------
-  const chunks = chunkText(text, chunkSize)
-    .map(c => forceValidUTF8(sanitizeText(c)))
-    .filter(c => c.length > 0);
+  const chunks = sheetChunks
+    ? sheetChunks
+        .map(c => ({
+          text: forceValidUTF8(sanitizeText(c.text)),
+          metadata: c.metadata,
+        }))
+        .filter(c => c.text.length > 0)
+    : chunkText(text, chunkSize)
+        .map(c => forceValidUTF8(sanitizeText(c)))
+        .filter(c => c.length > 0)
+        .map(c => ({ text: c, metadata: null }));
 
-  
+
 
   if (chunks.length === 0) {
     await prisma.document.update({
@@ -206,7 +230,8 @@ async function processChunkJob(job) {
         data: batch.map((c, idx) => ({
           documentId: docId,
           chunkIndex: i + idx,
-          text: c,
+          text: c.text,
+          metadata: c.metadata,
         })),
       });
     }

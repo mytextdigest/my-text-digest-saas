@@ -87,6 +87,7 @@ model Chunk {
   text       String?
   summary    String?
   embedding  Json?
+  metadata   Json?
   documentId String   @map("document_id")
   document   Document @relation(fields: [documentId], references: [id])
 }

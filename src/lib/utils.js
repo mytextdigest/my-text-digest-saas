@@ -77,6 +77,10 @@ export function getFileIcon(filename) {
       return 'FileText';
     case 'txt':
       return 'FileText';
+    case 'csv':
+    case 'xlsx':
+    case 'xls':
+      return 'Sheet';
     case 'jpg':
     case 'jpeg':
     case 'png':

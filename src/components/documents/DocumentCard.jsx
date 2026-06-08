@@ -9,6 +9,7 @@ import {
   Loader2,
   AlertCircle,
   ScanLine,
+  Sheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -39,6 +40,7 @@ const DocumentCard = ({
     Image: FileText,
     Video: FileText,
     Music: FileText,
+    Sheet,
   }[fileIcon] || FileText;
 
   const cardVariants = {

@@ -22,25 +22,27 @@
 
 | Task ID | Title | Status | Assignee | Depends On | Started | Completed |
 |---------|-------|--------|----------|------------|---------|-----------|
-| `0-A` | Worker: Spreadsheet Ingestion | `TODO` | — | — | — | — |
-| `0-B` | UI: Spreadsheet File Support | `TODO` | — | `0-A` | — | — |
+| `0-A` | Worker: Spreadsheet Ingestion | `DONE` | AI agent | — | 2026-06-08 | 2026-06-08 |
+| `0-B` | UI: Spreadsheet File Support | `DONE` | AI agent | `0-A` | 2026-06-08 | 2026-06-08 |
 
 ### Task 0-A — Worker: Spreadsheet Ingestion
-- **Status:** `TODO`
+- **Status:** `DONE`
 - **Key files to create/modify:**
   - `worker/extractSpreadsheet.js` (new)
   - `worker/index.js` (modified — route xlsx/csv to new extractor)
   - `prisma/schema.prisma` (add `metadata Json?` to `Chunk`)
   - New migration file
-- **Notes:** —
+- **Notes:** Uses `xlsx` (SheetJS) to parse `.xlsx`/`.xls`/`.csv`. The extractor returns ready-made chunk records (`{ text, metadata }`) grouped by sheet and bucketed by accumulated character size, repeating column headers in each chunk's text for retrieval context. `processChunkJob` now produces a unified `chunkRecords: [{ text, metadata }]` array for both the spreadsheet path and the existing generic `chunkText()` path (non-spreadsheet docs get `metadata: null`). Migration `20260608031026_add_chunk_metadata` adds `Chunk.metadata JSONB` (applied via `prisma migrate deploy` due to pre-existing drift from `Topic`/`TopicDocument` tables — `migrate dev` would have required a destructive reset).
 
 ### Task 0-B — UI: Spreadsheet File Support
-- **Status:** `TODO`
+- **Status:** `DONE`
 - **Key files to modify:**
-  - `src/components/documents/FileUpload.jsx`
-  - `src/components/documents/DocumentCard.jsx`
-  - Summary display component (wherever sheet breakdown will show)
-- **Notes:** —
+  - `src/components/documents/FileUpload.jsx` (added `.csv`/`.xlsx`/`.xls` to default accepted types)
+  - `src/components/documents/DocumentCard.jsx` (added `Sheet` icon mapping)
+  - `src/lib/utils.js` (`getFileIcon` returns `'Sheet'` for spreadsheet extensions)
+  - `src/components/layout/Sidebar.jsx` (added Excel/CSV file-type filters)
+  - `src/app/(app)/document/page.jsx` — Summary tab (added a "Sheets" breakdown card derived from `chunk.metadata`, shown only for spreadsheet documents)
+- **Notes:** Sheet breakdown is derived client-side from `doc.chunks[].metadata` (already included by `GET /api/documents/[id]`) — no new API endpoint needed. Full AI-generated workbook/sheet summaries and cross-sheet chat are left for a later milestone; this only surfaces the structural metadata captured during ingestion.
 
 ---
 
