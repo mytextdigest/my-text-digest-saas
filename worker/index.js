@@ -4,6 +4,7 @@ import { extractPdfText } from "./extractPdf.js";
 import { extractSpreadsheetChunks } from "./extractSpreadsheet.js";
 import { runOCR } from "./runOcr.js";
 import mammoth from "mammoth";
+import Tesseract from "tesseract.js";
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
 import nodemailer from "nodemailer";
@@ -60,6 +61,16 @@ function sanitizeText(input) {
 function forceValidUTF8(input) {
   if (!input) return "";
   return Buffer.from(input, "utf8").toString("utf8");
+}
+
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+function isImageFile(f) {
+  return IMAGE_EXTENSIONS.some(e => f.toLowerCase().endsWith(e));
+}
+function getImageMimeType(f) {
+  const map = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp' };
+  return map[Object.keys(map).find(k => f.toLowerCase().endsWith(k))] || 'image/jpeg';
 }
 
 function startTimer(label, meta = {}) {
@@ -169,6 +180,32 @@ async function processChunkJob(job) {
     const result = await mammoth.extractRawText({ buffer });
     rawText = result.value;
     endExtract();
+  } else if (isImageFile(filename)) {
+    endExtract();
+    await prisma.document.update({ where: { id: docId }, data: { status: "running_ocr" } });
+
+    const tessWorker = await Tesseract.createWorker("eng");
+    let ocrText = "";
+    try {
+      const { data } = await tessWorker.recognize(buffer);
+      ocrText = data.text.trim();
+    } finally {
+      await tessWorker.terminate();
+    }
+
+    const openaiClient = await getOpenAIForDocument(docId);
+    const base64 = buffer.toString("base64");
+    const visionResp = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: [
+        { type: "image_url", image_url: { url: `data:${getImageMimeType(filename)};base64,${base64}`, detail: "high" } },
+        { type: "text", text: "Analyze this image comprehensively. Describe the main subjects, any text visible, colors, composition, context, data (charts/tables/graphs), and all important details." }
+      ]}],
+      max_tokens: 1000,
+    });
+    const visionDesc = visionResp.choices[0].message.content;
+
+    rawText = `[Image Analysis]\n${visionDesc}\n\n[OCR Text]\n${ocrText || "(no text detected)"}`;
   } else {
     endExtract();
   }

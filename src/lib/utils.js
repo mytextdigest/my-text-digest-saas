@@ -85,6 +85,8 @@ export function getFileIcon(filename) {
     case 'jpeg':
     case 'png':
     case 'gif':
+    case 'webp':
+    case 'bmp':
       return 'Image';
     case 'mp4':
     case 'avi':

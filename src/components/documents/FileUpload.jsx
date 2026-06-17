@@ -8,7 +8,7 @@ import { cn, formatFileSize } from '@/lib/utils';
 const FileUpload = ({ 
   onUpload, 
   onClose,
-  acceptedTypes = ['.txt', '.pdf', '.docx', '.csv', '.xlsx', '.xls'],
+  acceptedTypes = ['.txt', '.pdf', '.docx', '.csv', '.xlsx', '.xls', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'],
   maxFileSize = 10 * 1024 * 1024, // 10MB
   className 
 }) => {

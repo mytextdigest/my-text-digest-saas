@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ScanLine,
   Sheet,
+  Image,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -37,7 +38,7 @@ const DocumentCard = ({
   const IconComponent = {
     FileText,
     File: FileText,
-    Image: FileText,
+    Image,
     Video: FileText,
     Music: FileText,
     Sheet,

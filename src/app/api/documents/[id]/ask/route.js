@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
+import { generateSignedUrl } from "@/lib/s3SignedUrl";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -240,9 +241,18 @@ export async function POST(req, { params }) {
       content: m.content
     }));
 
+    const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'];
+    const docExt = doc.filename.split('.').pop().toLowerCase();
+    const isImage = imageExts.includes(docExt) && doc.filePath;
+
     const userMsgGPT = {
       role: "user",
-      content: `Question: ${question}\n\nDocument Context:\n${contextText}`
+      content: isImage
+        ? [
+            { type: "text", text: `Question: ${question}\n\nDocument Context:\n${contextText}` },
+            { type: "image_url", image_url: { url: await generateSignedUrl(doc.filePath), detail: "high" } },
+          ]
+        : `Question: ${question}\n\nDocument Context:\n${contextText}`,
     };
 
     // ----------------------------
