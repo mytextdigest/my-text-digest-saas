@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import PdfViewer from "@/components/documents/PdfViewer";
@@ -50,6 +50,7 @@ function DocumentContent() {
 
   const [expandedMessage, setExpandedMessage] = useState(null);
   const [imageZoom, setImageZoom] = useState(1);
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
   // Reading Guide state
   const [pagesRead, setPagesRead] = useState(0);
@@ -668,13 +669,83 @@ function DocumentContent() {
   };
 
 
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
+  const handleCopySummary = () => {
+    if (!summary) return;
+    const lines = [
+      'DOCUMENT INFORMATION',
+      '====================',
+      `Type:      ${summary.documentType}`,
+      `Words:     ${summary.wordCount}`,
+      `Read Time: ${summary.estimatedReadTime} min`,
+      `Modified:  ${summary.lastModified}`,
+      '',
+      'SUMMARY',
+      '=======',
+      summary.overview,
+    ];
+    if (summary.keyPoints.length > 0) {
+      lines.push('', 'KEY POINTS', '==========');
+      summary.keyPoints.forEach((p) => lines.push(`• ${p}`));
     }
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopiedSummary(true);
+      setTimeout(() => setCopiedSummary(false), 2000);
+    });
+  };
+
+  const handlePrintSummary = () => {
+    if (!summary) return;
+    const keyPointsHtml = summary.keyPoints.length > 0
+      ? `<section>
+          <h2>Key Points</h2>
+          <ul>${summary.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
+        </section>`
+      : '';
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Summary — ${summary.title}</title>
+  <style>
+    body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; color: #111; line-height: 1.7; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .meta { font-size: 0.85rem; color: #555; margin-bottom: 2rem; }
+    section { margin-bottom: 1.8rem; }
+    h2 { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 0.75rem; }
+    p { margin: 0; }
+    ul { padding-left: 1.25rem; margin: 0; }
+    li { margin-bottom: 0.4rem; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.5rem; font-size: 0.9rem; }
+    .info-grid span.label { color: #555; }
+    @media print { body { margin: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>${summary.title}</h1>
+  <p class="meta">Printed on ${new Date().toLocaleDateString()}</p>
+  <section>
+    <h2>Document Information</h2>
+    <div class="info-grid">
+      <div><span class="label">Type:</span> ${summary.documentType}</div>
+      <div><span class="label">Words:</span> ${summary.wordCount}</div>
+      <div><span class="label">Read Time:</span> ${summary.estimatedReadTime} min</div>
+      <div><span class="label">Modified:</span> ${summary.lastModified}</div>
+    </div>
+  </section>
+  <section>
+    <h2>Summary</h2>
+    <p>${summary.overview}</p>
+  </section>
+  ${keyPointsHtml}
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 250);
   };
 
 
@@ -1395,15 +1466,38 @@ function DocumentContent() {
                     </div>
                   )}
 
-                  {/* Regenerate Button */}
-                  <div className="text-center">
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
                     <Button
                       variant="outline"
+                      size="sm"
+                      onClick={handleCopySummary}
+                      className="flex items-center space-x-2"
+                    >
+                      {copiedSummary ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                      <span>{copiedSummary ? 'Copied!' : 'Copy'}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrintSummary}
+                      className="flex items-center space-x-2"
+                    >
+                      <Printer className="h-4 w-4" />
+                      <span>Print</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={generateSummary}
                       className="flex items-center space-x-2"
                     >
                       <BarChart3 className="h-4 w-4" />
-                      <span>Regenerate Summary</span>
+                      <span>Regenerate</span>
                     </Button>
                   </div>
                 </motion.div>
