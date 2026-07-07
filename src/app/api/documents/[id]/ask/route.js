@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
 import { generateSignedUrl } from "@/lib/s3SignedUrl";
+import s3Client from "@/lib/s3.mjs";
+import { parseWorkbook, streamToBuffer } from "@/lib/spreadsheetParser";
+import { detectChartIntent, generateChartSpec } from "@/lib/chartSpec";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -201,6 +205,50 @@ export async function POST(req, { params }) {
       .join("\n\n");
 
     // ----------------------------
+    // 10.5) CHART GENERATION — runs BEFORE the main answer call so the answer
+    // can react to whether a chart was actually produced (see chartNote below).
+    // ----------------------------
+    const wantsChart = detectChartIntent(question);
+    let chartSpec = null;
+
+    if (wantsChart) {
+      let extraData = null;
+
+      const spreadsheetExts = ["xlsx", "xls", "csv"];
+      const docExtForChart = doc.filename?.split(".").pop()?.toLowerCase();
+      if (spreadsheetExts.includes(docExtForChart) && doc.filePath) {
+        try {
+          const object = await s3Client.send(
+            new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: doc.filePath })
+          );
+          const buffer = await streamToBuffer(object.Body);
+          const sheets = parseWorkbook(buffer, doc.filename);
+          extraData = sheets.map((s) => ({
+            sheet: s.name,
+            headers: s.headers,
+            rows: s.rows.slice(0, 200),
+          }));
+        } catch (err) {
+          console.error("chart extraData spreadsheet fetch failed:", err);
+        }
+      }
+
+      chartSpec = await generateChartSpec({
+        openai,
+        question,
+        contextText,
+        extraData,
+        signal: controller.signal,
+      });
+    }
+
+    const chartNote = !wantsChart
+      ? ""
+      : chartSpec
+      ? `\nA ${chartSpec.type} chart has been generated from the document data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
+      : `\nA chart could not be generated from the available document data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+
+    // ----------------------------
     // 11) SHORT-TERM MEMORY (LAST 6 MESSAGES)
     // ----------------------------
     const prevMsgs = await prisma.message.findMany({
@@ -233,7 +281,7 @@ export async function POST(req, { params }) {
         - If the document does not fully answer the question, provide the closest accurate information the document contains (do not say "I don't know").
         - Plain text only (no markdown, no bullets, no special formatting).
         - Be concise, factual, and avoid assumptions.
-      `.trim()
+      `.trim() + chartNote
     };
 
     const memoryMsgs = prevMsgs.map(m => ({
@@ -327,7 +375,8 @@ export async function POST(req, { params }) {
         conversationId,
         role: "assistant",
         content: assistantText,
-        status: "done"
+        status: "done",
+        chartData: chartSpec
       }
     });
 
@@ -337,7 +386,8 @@ export async function POST(req, { params }) {
     return NextResponse.json({
       success: true,
       conversationId,
-      answer: assistantText
+      answer: assistantText,
+      chart: chartSpec
     });
 
   } catch (err) {

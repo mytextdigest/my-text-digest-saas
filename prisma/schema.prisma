@@ -109,6 +109,7 @@ model Message {
   status         String?      @default("done")
   createdAt      DateTime     @default(now()) @map("created_at")
   conversationId String       @map("conversation_id")
+  chartData      Json?        @map("chart_data")
   conversation   Conversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -129,6 +130,8 @@ model ProjectMessage {
   status         String?             @default("done")
   createdAt      DateTime            @default(now()) @map("created_at")
   conversationId String              @map("conversation_id")
+  chartData      Json?               @map("chart_data")
+  citations      Json?               @map("citations")
   conversation   ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 

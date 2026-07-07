@@ -9,6 +9,34 @@ import { cn } from '@/lib/utils';
 import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
 import MessageActions from './MessageActions';
 import ExpandedMessageModal from './ExpandedMessageModal';
+import ChartMessage from './ChartMessage';
+import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
+
+// Splits message text on cited document filenames and renders each one as a clickable button.
+const renderMessageContent = (content, citations, onCitationClick) => {
+  if (!citations?.length) return content;
+
+  const names = citations.map(c => c.filename).filter(Boolean);
+  if (!names.length) return content;
+
+  const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'g');
+
+  return content.split(pattern).map((part, i) => {
+    const citation = citations.find(c => c.filename === part);
+    if (!citation) return part;
+    return (
+      <button
+        key={i}
+        type="button"
+        onClick={() => onCitationClick(citation)}
+        className="font-medium underline decoration-dotted underline-offset-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+      >
+        {part}
+      </button>
+    );
+  });
+};
 
 const ChatInterface = ({ className, projectId }) => {
   const [messages, setMessages] = useState([]);
@@ -26,6 +54,7 @@ const ChatInterface = ({ className, projectId }) => {
   const [copiedId, setCopiedId] = useState(null);
 
   const [expandedMessage, setExpandedMessage] = useState(null);
+  const [previewDocumentId, setPreviewDocumentId] = useState(null);
 
   const openExpanded = (message) => {
     setExpandedMessage(message);
@@ -54,7 +83,9 @@ const ChatInterface = ({ className, projectId }) => {
               id: m.id,
               type: m.role === "user" ? "user" : "assistant",
               content: m.content,
-              timestamp: new Date(m.timestamp)
+              timestamp: new Date(m.timestamp),
+              chart: m.chart || null,
+              citations: m.citations || null
             }))
           );
         }
@@ -119,7 +150,9 @@ const ChatInterface = ({ className, projectId }) => {
             id: `ai-${Date.now()}`,
             type: "assistant",
             content: res.answer,
-            timestamp: new Date()
+            timestamp: new Date(),
+            chart: res.chart || null,
+            citations: res.citations || null
           }
         ]);
       } else if (!res.cancelled) {
@@ -373,7 +406,7 @@ const ChatInterface = ({ className, projectId }) => {
                         )}
                       >
                         <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
-                          {message.content}
+                          {renderMessageContent(message.content, message.citations, (c) => setPreviewDocumentId(c.id))}
                         </p>
                       </div>
 
@@ -383,6 +416,10 @@ const ChatInterface = ({ className, projectId }) => {
                         onExpand={() => openExpanded(message)}
                         align={message.type === 'user' ? "right" : "left"}
                       />
+
+                      {message.type === 'assistant' && message.chart && (
+                        <ChartMessage spec={message.chart} />
+                      )}
 
                     </div>
 
@@ -498,7 +535,14 @@ const ChatInterface = ({ className, projectId }) => {
         message={expandedMessage}
         onClose={closeExpanded}
       />
-      
+
+      {previewDocumentId && (
+        <DocumentPreviewModal
+          documentId={previewDocumentId}
+          onClose={() => setPreviewDocumentId(null)}
+        />
+      )}
+
     </Card>
   );
 };

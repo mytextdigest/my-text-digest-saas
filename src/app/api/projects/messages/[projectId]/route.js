@@ -38,6 +38,8 @@ export async function GET(req, { params }) {
       content: m.content,
       status: m.status,
       timestamp: m.createdAt,
+      chart: m.chartData || null,
+      citations: m.citations || null,
     }));
 
     return NextResponse.json({ success: true, messages: mapped });

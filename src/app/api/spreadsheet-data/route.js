@@ -5,54 +5,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { prisma } from "@/lib/prisma";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
-const XLSX = require("xlsx");
+import { parseWorkbook, streamToBuffer } from "@/lib/spreadsheetParser";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
-
-const MAX_ROWS = 1000;
-
-async function streamToBuffer(stream) {
-  const parts = [];
-  for await (const chunk of stream) parts.push(chunk);
-  return Buffer.concat(parts);
-}
-
-function parseWorkbook(buffer, filename) {
-  const isCsv = filename.toLowerCase().endsWith(".csv");
-  const workbook = isCsv
-    ? XLSX.read(buffer.toString("utf8"), { type: "string" })
-    : XLSX.read(buffer, { type: "buffer" });
-
-  return workbook.SheetNames.map((name) => {
-    const ws = workbook.Sheets[name];
-    const raw = XLSX.utils.sheet_to_json(ws, {
-      header: 1,
-      blankrows: false,
-      defval: "",
-    });
-
-    if (raw.length === 0) {
-      return { name, headers: [], rows: [], totalRows: 0 };
-    }
-
-    const headers = raw[0].map((h) => String(h ?? "").trim());
-    const dataRows = raw.slice(1);
-    const totalRows = dataRows.length;
-
-    const rows = dataRows.slice(0, MAX_ROWS).map((row) => {
-      const obj = {};
-      headers.forEach((h, idx) => {
-        obj[h || `Col${idx + 1}`] = String(row[idx] ?? "");
-      });
-      return obj;
-    });
-
-    return { name, headers, rows, totalRows };
-  });
-}
 
 export async function GET(req) {
   try {

@@ -7,14 +7,15 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
-import PdfViewer from "@/components/documents/PdfViewer";
 import { cn } from '@/lib/utils';
 import DocViewer, { DocViewerRenderers } from "react-doc-viewer";
 import MessageActions from "@/components/chat/MessageActions";
 import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
+import ChartMessage from "@/components/chat/ChartMessage";
+import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
 
 
 
@@ -360,7 +361,8 @@ function DocumentContent() {
               id: m.id,
               role: m.role,
               content: m.content,
-              timestamp: new Date(m.createdAt || m.created_at)
+              timestamp: new Date(m.createdAt || m.created_at),
+              chart: m.chartData || null
             }));
   
             // preserve system welcome message
@@ -568,7 +570,8 @@ function DocumentContent() {
             id: `assistant-${Date.now()}-${Math.random()}`,
             role: "assistant",
             content: res.answer,
-            timestamp: new Date()
+            timestamp: new Date(),
+            chart: res.chart || null
           }
         ]);
   
@@ -753,183 +756,20 @@ function DocumentContent() {
 
   const renderDocument = () => {
     if (!doc) return null;
-
-    const ext = doc.filename.split(".").pop().toLowerCase();
-
-    if (ext === "txt") {
-      return (
-        <div ref={docScrollRef} onScroll={handleDocScroll} className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto">
-          <pre className="whitespace-pre-wrap text-gray-900 dark:text-gray-100 p-6 font-mono text-sm leading-relaxed max-w-5xl mx-auto">
-            {doc.content}
-          </pre>
-        </div>
-      );
-    }
-
-    if (ext === "pdf") {
-      return (
-        <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <PdfViewer fileUrl={doc.fileUrl} onPageChange={handleDocPageChange} onTotalPages={setPdfTotalPages} />
-        </div>
-      );
-    }
-
-    if (ext === "docx") {
-      return (
-        <div ref={docScrollRef} onScroll={handleDocScroll} className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto">
-          <div
-            className="prose prose-gray dark:prose-invert max-w-none p-6"
-            dangerouslySetInnerHTML={{ __html: docxHtml || "<p>Loading...</p>" }}
-          />
-        </div>
-      );
-    }
-
-    if (ext === "xlsx" || ext === "xls" || ext === "csv") {
-      if (!spreadsheetData) {
-        return (
-          <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-3"></div>
-              <p className="text-gray-400 dark:text-gray-500 text-sm">Loading spreadsheet…</p>
-            </div>
-          </div>
-        );
-      }
-
-      const activeSheet = spreadsheetData[activeSheetIndex];
-
-      return (
-        <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
-          {/* Sheet tabs — only for multi-sheet workbooks */}
-          {spreadsheetData.length > 1 && (
-            <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto shrink-0">
-              {spreadsheetData.map((sheet, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveSheetIndex(i)}
-                  className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                    i === activeSheetIndex
-                      ? "border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20"
-                      : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  {sheet.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="flex-1 overflow-auto">
-            {activeSheet?.headers?.length > 0 ? (
-              <table className="min-w-full text-xs border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 w-10 shrink-0">
-                      #
-                    </th>
-                    {activeSheet.headers.map((h, i) => (
-                      <th
-                        key={i}
-                        className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeSheet.rows.map((row, rowIdx) => (
-                    <tr
-                      key={rowIdx}
-                      className={rowIdx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}
-                    >
-                      <td className="px-3 py-1.5 text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 text-right select-none">
-                        {rowIdx + 2}
-                      </td>
-                      {activeSheet.headers.map((h, colIdx) => (
-                        <td
-                          key={colIdx}
-                          className="px-3 py-1.5 text-gray-800 dark:text-gray-200 border-r border-gray-100 dark:border-gray-800 whitespace-nowrap max-w-xs truncate"
-                          title={String(row[h] ?? "")}
-                        >
-                          {String(row[h] ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-gray-400 dark:text-gray-500 text-sm">This sheet is empty</p>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="shrink-0 px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-3">
-            <span>{activeSheet?.headers?.length ?? 0} columns</span>
-            <span>·</span>
-            <span>
-              {activeSheet?.totalRows ?? 0} rows
-              {activeSheet?.totalRows > 1000 ? " (showing first 1,000)" : ""}
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)) {
-      return (
-        <div className="relative w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-auto flex items-center justify-center">
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 shadow-sm">
-            <button
-              onClick={() => setImageZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
-              disabled={imageZoom <= 0.25}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title="Zoom out"
-            >
-              <ZoomOut className="h-4 w-4 text-gray-600 dark:text-gray-300" />
-            </button>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-300 w-10 text-center select-none">
-              {Math.round(imageZoom * 100)}%
-            </span>
-            <button
-              onClick={() => setImageZoom(z => Math.min(4, +(z + 0.25).toFixed(2)))}
-              disabled={imageZoom >= 4}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title="Zoom in"
-            >
-              <ZoomIn className="h-4 w-4 text-gray-600 dark:text-gray-300" />
-            </button>
-            <div className="w-px h-4 bg-gray-200 dark:bg-gray-600 mx-0.5" />
-            <button
-              onClick={() => setImageZoom(1)}
-              disabled={imageZoom === 1}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title="Reset zoom"
-            >
-              <RotateCcw className="h-3.5 w-3.5 text-gray-600 dark:text-gray-300" />
-            </button>
-          </div>
-          <div className="p-6 min-w-full min-h-full flex items-center justify-center">
-            <img
-              src={doc.fileUrl}
-              alt={doc.filename}
-              style={{ transform: `scale(${imageZoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease' }}
-              className="max-w-none rounded shadow-sm"
-            />
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-        <p className="text-gray-500 dark:text-gray-400">Unsupported file type: {ext}</p>
-      </div>
+      <DocumentPreviewBody
+        doc={doc}
+        docxHtml={docxHtml}
+        spreadsheetData={spreadsheetData}
+        activeSheetIndex={activeSheetIndex}
+        onActiveSheetChange={setActiveSheetIndex}
+        imageZoom={imageZoom}
+        onImageZoomChange={setImageZoom}
+        scrollRef={docScrollRef}
+        onScroll={handleDocScroll}
+        onPdfPageChange={handleDocPageChange}
+        onPdfTotalPages={setPdfTotalPages}
+      />
     );
   };
 
@@ -1254,6 +1094,10 @@ function DocumentContent() {
                         onExpand={() => openExpanded(message)}
                         align={message.role === 'user' ? "right" : "left"}
                       />
+
+                      {message.role === 'assistant' && message.chart && (
+                        <ChartMessage spec={message.chart} />
+                      )}
 
                     </div>
 

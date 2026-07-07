@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
+import { detectChartIntent, generateChartSpec } from "@/lib/chartSpec";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -108,6 +109,18 @@ export async function POST(req) {
     }
 
     const openai = new OpenAI({ apiKey });
+
+    // Chart intent + optional topic-count data, shared by whichever GPT-reaching
+    // branch below actually runs (BM25 fallback or the main embedding path).
+    const wantsChart = detectChartIntent(question);
+    let topicsExtraData = null;
+    if (wantsChart && /topic|cluster|categor|group/i.test(question)) {
+      topicsExtraData = await prisma.topic.findMany({
+        where: { projectId },
+        select: { id: true, name: true, documentCount: true },
+        orderBy: { documentCount: "desc" },
+      });
+    }
 
     // 1) Conversation (latest or new)
     let conv = await prisma.projectConversation.findFirst({
@@ -265,6 +278,22 @@ export async function POST(req) {
         .map(s => `Document: ${s.documentName}\n- ${s.text.slice(0, 600).replace(/\n+/g, " ")}`)
         .join("\n\n");
 
+      let chartSpec = null;
+      if (wantsChart) {
+        chartSpec = await generateChartSpec({
+          openai,
+          question,
+          contextText: contextBlocks,
+          extraData: topicsExtraData,
+          signal: controller.signal,
+        });
+      }
+      const chartNote = !wantsChart
+        ? ""
+        : chartSpec
+        ? `\nA ${chartSpec.type} chart has been generated from the project data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
+        : `\nA chart could not be generated from the available project data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+
       const systemMsg = {
         role: "system",
         content: `
@@ -272,7 +301,7 @@ You are answering based on extracted text only.
 Embeddings are not ready yet.
 Use ONLY the provided text. Do not invent facts.
 BM25 retrieval has selected the most relevant chunks.
-        `.trim(),
+        `.trim() + chartNote,
       };
 
       // Load previous messages
@@ -320,10 +349,11 @@ BM25 retrieval has selected the most relevant chunks.
           role: "assistant",
           content: assistantText,
           status: "done",
+          chartData: chartSpec,
         },
       });
 
-      return NextResponse.json({ success: true, answer: assistantText });
+      return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec });
     }
 
 
@@ -401,6 +431,24 @@ BM25 retrieval has selected the most relevant chunks.
     const docMeta = docs.map((d, i) => `${i + 1}. ${d.filename}`).join("\n");
     const context = `Project contains ${docs.length} documents:\n${docMeta}\n\n${contextBlocks.join("\n\n")}`;
 
+    // 10.5) CHART GENERATION — runs BEFORE the main answer call so the answer
+    // can react to whether a chart was actually produced (see chartNote below).
+    let chartSpec = null;
+    if (wantsChart) {
+      chartSpec = await generateChartSpec({
+        openai,
+        question,
+        contextText: context,
+        extraData: topicsExtraData,
+        signal: controller.signal,
+      });
+    }
+    const chartNote = !wantsChart
+      ? ""
+      : chartSpec
+      ? `\nA ${chartSpec.type} chart has been generated from the project data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
+      : `\nA chart could not be generated from the available project data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+
     // 11) Short-term memory: previous messages (createdAt < userMsg.createdAt)
     const prevMsgs = await prisma.projectMessage.findMany({
       where: { conversationId: conv.id, createdAt: { lt: userMsg.createdAt } },
@@ -433,7 +481,10 @@ If a factual answer cannot be found in the selected documents:
 
 Response format:
 - Plain text only (no markdown, no lists, no special formatting).
-      `.trim(),
+- When you refer to a specific document by name, quote its filename exactly as it
+  appears after "Document:" in the context above (including the extension), so it can
+  be linked back to the source.
+      `.trim() + chartNote,
     };
 
     const memoryMsgs = prevMsgs.map((m) => ({ role: m.role, content: m.content }));
@@ -465,6 +516,17 @@ Response format:
       .replace(/\*/g, "")
       .trim();
 
+    // Citations: documents whose exact filename was quoted in the answer.
+    // `allChunks` already carries { documentId, documentName } per chunk — dedupe to
+    // one entry per document, then keep only the ones the model actually named.
+    const uniqueDocs = new Map();
+    for (const c of allChunks) {
+      if (!uniqueDocs.has(c.documentId)) uniqueDocs.set(c.documentId, c.documentName);
+    }
+    const citations = [...uniqueDocs.entries()]
+      .filter(([, filename]) => filename && assistantText.includes(filename))
+      .map(([id, filename]) => ({ id, filename }));
+
     // 13) Persist messages: update user -> done and insert assistant
     await prisma.projectMessage.update({
       where: { id: userMsg.id },
@@ -477,10 +539,12 @@ Response format:
         role: "assistant",
         content: assistantText,
         status: "done",
+        chartData: chartSpec,
+        citations: citations.length ? citations : undefined,
       },
     });
 
-    return NextResponse.json({ success: true, answer: assistantText });
+    return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec, citations });
   } catch (err) {
     console.error("❌ ask-project:", err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
