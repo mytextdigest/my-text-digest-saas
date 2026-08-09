@@ -128,14 +128,15 @@ model Conversation {
 }
 
 model Message {
-  id             String       @id @default(cuid())
-  role           String?
-  content        String?
-  status         String?      @default("done")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  conversationId String       @map("conversation_id")
-  chartData      Json?        @map("chart_data")
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  id                     String       @id @default(cuid())
+  role                   String?
+  content                String?
+  status                 String?      @default("done")
+  createdAt              DateTime     @default(now()) @map("created_at")
+  conversationId         String       @map("conversation_id")
+  chartData              Json?        @map("chart_data")
+  externalKnowledgeQuery String?      @map("external_knowledge_query")
+  conversation           Conversation @relation(fields: [conversationId], references: [id])
 }
 
 model ProjectConversation {
@@ -149,15 +150,16 @@ model ProjectConversation {
 }
 
 model ProjectMessage {
-  id             String              @id @default(cuid())
-  role           String?
-  content        String?
-  status         String?             @default("done")
-  createdAt      DateTime            @default(now()) @map("created_at")
-  conversationId String              @map("conversation_id")
-  chartData      Json?               @map("chart_data")
-  citations      Json?               @map("citations")
-  conversation   ProjectConversation @relation(fields: [conversationId], references: [id])
+  id                     String              @id @default(cuid())
+  role                   String?
+  content                String?
+  status                 String?             @default("done")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  conversationId         String              @map("conversation_id")
+  chartData              Json?               @map("chart_data")
+  citations              Json?               @map("citations")
+  externalKnowledgeQuery String?             @map("external_knowledge_query")
+  conversation           ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 
 

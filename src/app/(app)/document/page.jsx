@@ -17,6 +17,12 @@ import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
 import ChartMessage from "@/components/chat/ChartMessage";
 import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
 import FiguresGallery from "@/components/documents/FiguresGallery";
+import { useChatEngine } from "@/components/chat/useChatEngine";
+import {
+  GeneralKnowledgePermissionPrompt,
+  GeneralKnowledgeProgressChip,
+  ExternalKnowledgeBadge,
+} from "@/components/chat/ExternalKnowledgeBadge";
 
 
 
@@ -32,7 +38,6 @@ function DocumentContent() {
   const [doc, setDoc] = useState(null);
   const [chat, setChat] = useState([]);
   const [question, setQuestion] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'summary', 'guide', or 'figures'
   const [summary, setSummary] = useState(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -45,9 +50,6 @@ function DocumentContent() {
   const [conversationId, setConversationId] = useState(null);
   const [showClearDialog, setShowClearDialog] = useState(false);
 
-  const abortControllerRef = useRef(null);
-  const currentRequestIdRef = useRef(null);
-  const [isCancelling, setIsCancelling] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
   const [expandedMessage, setExpandedMessage] = useState(null);
@@ -365,7 +367,8 @@ function DocumentContent() {
               role: m.role,
               content: m.content,
               timestamp: new Date(m.createdAt || m.created_at),
-              chart: m.chartData || null
+              chart: m.chartData || null,
+              externalKnowledgeQuery: m.externalKnowledgeQuery || null
             }));
   
             // preserve system welcome message
@@ -525,10 +528,59 @@ function DocumentContent() {
 
 
   //  --- Asking document queries ----
-  const handleAsk = async (e) => {
+  const handleAskResult = useCallback((res) => {
+    setChat(prev => [
+      ...prev,
+      {
+        id: `assistant-${Date.now()}-${Math.random()}`,
+        role: "assistant",
+        content: res.answer,
+        timestamp: new Date(),
+        chart: res.chart || null,
+        externalKnowledgeQuery: res.externalKnowledgeQuery || null
+      }
+    ]);
+
+    if (res.conversationId && res.conversationId !== conversationId) {
+      setConversationId(res.conversationId);
+    }
+  }, [conversationId]);
+
+  const handleAskError = useCallback((res) => {
+    setChat(prev => [
+      ...prev,
+      {
+        id: Date.now(),
+        role: "assistant",
+        content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
+        timestamp: new Date()
+      }
+    ]);
+  }, []);
+
+  const ask = useCallback((question, requestId, signal) => {
+    return fetch(`/api/documents/${id}/ask`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({ question, conversationId, requestId })
+    }).then(r => r.json());
+  }, [id, conversationId]);
+
+  const {
+    isTyping,
+    pendingConfirmation,
+    progress,
+    sendMessage,
+    respondToConfirmation,
+    cancelRequest,
+  } = useChatEngine({ ask, onResult: handleAskResult, onError: handleAskError });
+
+  const handleAsk = (e) => {
     e.preventDefault();
     if (!question.trim()) return;
-  
+
     const userMessage = {
       id: `user-${Date.now()}-${Math.random()}`,
       role: "user",
@@ -536,102 +588,14 @@ function DocumentContent() {
       timestamp: new Date()
     };
     setChat(prev => [...prev, userMessage]);
+
+    const q = question;
     setQuestion("");
-    setIsTyping(true);
-  
-    const controller = new AbortController();
-    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  
-    abortControllerRef.current = controller;
-    currentRequestIdRef.current = requestId;
-  
-    try {
-      const res = await fetch(`/api/documents/${id}/ask`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          question,
-          conversationId,
-          requestId
-        })
-      }).then(r => r.json());
-  
-      // ignore cancelled / stale responses
-      if (
-        controller.signal.aborted ||
-        currentRequestIdRef.current !== requestId
-      ) {
-        return;
-      }
-  
-      if (res?.success) {
-        setChat(prev => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}-${Math.random()}`,
-            role: "assistant",
-            content: res.answer,
-            timestamp: new Date(),
-            chart: res.chart || null
-          }
-        ]);
-  
-        if (res.conversationId && res.conversationId !== conversationId) {
-          setConversationId(res.conversationId);
-        }
-      } else if (!res?.cancelled) {
-        setChat(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            role: "assistant",
-            content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
-            timestamp: new Date()
-          }
-        ]);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError") {
-        setChat(prev => [
-          ...prev,
-          {
-            id: Date.now(),
-            role: "assistant",
-            content: "Sorry, I encountered an error while processing your question.",
-            timestamp: new Date()
-          }
-        ]);
-      }
-    } finally {
-      setIsTyping(false);
-      setIsCancelling(false);
-      abortControllerRef.current = null;
-      currentRequestIdRef.current = null;
-    }
+
+    sendMessage(q);
   };
 
-  const handleCancelRequest = async () => {
-    if (!currentRequestIdRef.current) return;
-  
-    setIsCancelling(true);
-    setIsTyping(false);
-  
-    abortControllerRef.current?.abort();
-  
-    await fetch("/api/cancel", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requestId: currentRequestIdRef.current
-      })
-    }).catch(() => {});
-  
-    abortControllerRef.current = null;
-    currentRequestIdRef.current = null;
-  };
+  const handleCancelRequest = () => cancelRequest();
   
 
 
@@ -645,8 +609,7 @@ function DocumentContent() {
   
       if (res?.success) {
         setConversationId(res.conversationId);
-  
-        setIsTyping(false);
+
         setQuestion("");
   
         setChat([
@@ -1122,31 +1085,53 @@ function DocumentContent() {
                         <ChartMessage spec={message.chart} />
                       )}
 
+                      {message.role === 'assistant' && (
+                        <ExternalKnowledgeBadge query={message.externalKnowledgeQuery} />
+                      )}
+
                     </div>
 
 
                   </motion.div>
                 ))}
 
-                {isTyping && (
+                {pendingConfirmation && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="flex justify-start"
                   >
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                        <div
-                          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.1s" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.2s" }}
-                        ></div>
+                    <GeneralKnowledgePermissionPrompt
+                      query={pendingConfirmation.query}
+                      onApprove={() => respondToConfirmation(true)}
+                      onDecline={() => respondToConfirmation(false)}
+                    />
+                  </motion.div>
+                )}
+
+                {isTyping && !pendingConfirmation && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-start"
+                  >
+                    {progress?.stage === 'consulting_general_knowledge' ? (
+                      <GeneralKnowledgeProgressChip />
+                    ) : (
+                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div
+                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.1s" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.2s" }}
+                          ></div>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </motion.div>
                 )}
 

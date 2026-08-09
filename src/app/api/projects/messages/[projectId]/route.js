@@ -40,6 +40,7 @@ export async function GET(req, { params }) {
       timestamp: m.createdAt,
       chart: m.chartData || null,
       citations: m.citations || null,
+      externalKnowledgeQuery: m.externalKnowledgeQuery || null,
     }));
 
     return NextResponse.json({ success: true, messages: mapped });

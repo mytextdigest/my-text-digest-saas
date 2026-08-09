@@ -6,6 +6,10 @@ import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
 import { detectChartIntent, generateChartSpec } from "@/lib/chartSpec";
+import {
+  GENERAL_KNOWLEDGE_TOOL,
+  stashPendingToolCall,
+} from "@/lib/generalKnowledgeTool";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -299,6 +303,23 @@ export async function POST(req) {
         content: `
 You are answering based on extracted text only.
 Embeddings are not ready yet.
+
+STEP 0 — do this check FIRST, before applying anything below:
+Does fully answering this question require information that is NOT in the extracted text
+below — e.g. another company's or product's data, current/live/today's data, industry or
+market benchmarks, or general world knowledge the text doesn't cover?
+- If YES: you MUST call the consult_general_knowledge tool with a precise, self-contained
+  query for exactly that missing piece. Do this instead of answering. Do NOT say the text
+  doesn't contain the information, do NOT give a partial answer, do NOT guess — call the
+  tool.
+- If NO (the question is fully within the text's own subject matter): continue below and
+  answer from the extracted text only.
+
+If a consult_general_knowledge tool result already appears earlier in this conversation,
+that content IS authorized outside information for this answer — use it directly, noting
+briefly that it comes from general knowledge and may not be fully current. Do NOT refuse
+or redirect the user to look it up themselves once the tool has already supplied an answer.
+
 Use ONLY the provided text. Do not invent facts.
 BM25 retrieval has selected the most relevant chunks.
         `.trim() + chartNote,
@@ -328,12 +349,46 @@ BM25 retrieval has selected the most relevant chunks.
           model: "gpt-4o-mini",
           messages,
           temperature: 0.3,
-          max_tokens: 800
+          max_tokens: 800,
+          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tool_choice: "auto"
         },
         {
           signal: controller.signal
         }
       );
+
+      const bm25ToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+      if (bm25ToolCall?.function?.name === "consult_general_knowledge") {
+        let toolQuery = "";
+        try {
+          toolQuery = JSON.parse(bm25ToolCall.function.arguments || "{}").query || "";
+        } catch {
+          toolQuery = "";
+        }
+
+        stashPendingToolCall(requestId, {
+          kind: "project",
+          conversationId: conv.id,
+          userMsgId: userMsg.id,
+          baseMessages: messages,
+          assistantMessage: completion.choices[0].message,
+          toolCall: bm25ToolCall,
+          query: toolQuery,
+          chartSpec,
+          ownerUserEmail: session.user.email,
+          apiKeyUserId: session.user.id,
+          allChunksForCitations: allChunks,
+          completionOptions: { model: "gpt-4o-mini", temperature: 0.3, max_tokens: 800 }
+        });
+
+        return NextResponse.json({
+          success: true,
+          needsConfirmation: true,
+          requestId,
+          query: toolQuery
+        });
+      }
 
       const assistantText = completion?.choices?.[0]?.message?.content?.trim() || "";
 
@@ -462,6 +517,22 @@ BM25 retrieval has selected the most relevant chunks.
       content: `
 You are an expert assistant that answers questions *based on selected project documents*.
 
+STEP 0 — do this check FIRST, before applying anything below:
+Does fully answering this question require information that is NOT in the selected
+documents — e.g. another company's or product's data, current/live/today's data,
+industry or market benchmarks, or general world knowledge the documents don't cover?
+- If YES: you MUST call the consult_general_knowledge tool with a precise, self-contained
+  query for exactly that missing piece. Do this instead of answering. Do NOT say the
+  documents don't contain the information, do NOT give a partial answer, do NOT guess —
+  call the tool. Never use this tool to bypass the unselected-document rule below.
+- If NO (the question is fully within the documents' own subject matter): continue below
+  and answer from the documents only.
+
+If a consult_general_knowledge tool result already appears earlier in this conversation,
+that content IS authorized outside information for this answer — use it directly, noting
+briefly that it comes from general knowledge and may not be fully current. Do NOT refuse
+or redirect the user to look it up themselves once the tool has already supplied an answer.
+
 You may:
 - Summarize document content
 - Explain document content
@@ -469,14 +540,15 @@ You may:
 - Generate new text (letters, emails, reports, etc.)
   as long as the factual information used comes from the selected documents.
 
-Do NOT:
+Do NOT (once STEP 0 has determined the tool is NOT needed):
 - Use information from unselected documents.
 - Invent factual information that is not supported by the selected documents.
 
 If a user asks about an unselected document:
 "The document is unselected or does not exist, so I cannot answer that."
 
-If a factual answer cannot be found in the selected documents:
+If a factual answer cannot be found in the selected documents — and the missing piece is
+within the documents' own scope, not external comparison data (see STEP 0):
 "I cannot answer that based on the selected documents."
 
 Response format:
@@ -499,6 +571,8 @@ Response format:
           messages: [systemMsg, ...memoryMsgs, userMsgForModel],
           temperature: 0.3,
           max_tokens: 800,
+          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tool_choice: "auto",
         },
         { signal: controller.signal }
       );
@@ -510,6 +584,38 @@ Response format:
       throw err;
     } finally {
       activeRequests.delete(requestId);
+    }
+
+    const mainToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+    if (mainToolCall?.function?.name === "consult_general_knowledge") {
+      let toolQuery = "";
+      try {
+        toolQuery = JSON.parse(mainToolCall.function.arguments || "{}").query || "";
+      } catch {
+        toolQuery = "";
+      }
+
+      stashPendingToolCall(requestId, {
+        kind: "project",
+        conversationId: conv.id,
+        userMsgId: userMsg.id,
+        baseMessages: [systemMsg, ...memoryMsgs, userMsgForModel],
+        assistantMessage: completion.choices[0].message,
+        toolCall: mainToolCall,
+        query: toolQuery,
+        chartSpec,
+        ownerUserEmail: session.user.email,
+        apiKeyUserId: session.user.id,
+        allChunksForCitations: allChunks,
+        completionOptions: { model: "gpt-4o-mini", temperature: 0.3, max_tokens: 800 }
+      });
+
+      return NextResponse.json({
+        success: true,
+        needsConfirmation: true,
+        requestId,
+        query: toolQuery
+      });
     }
 
     const assistantText = (completion?.choices?.[0]?.message?.content || "")

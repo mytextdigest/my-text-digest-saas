@@ -9,6 +9,10 @@ import { generateSignedUrl } from "@/lib/s3SignedUrl";
 import s3Client from "@/lib/s3.mjs";
 import { parseWorkbook, streamToBuffer } from "@/lib/spreadsheetParser";
 import { detectChartIntent, generateChartSpec } from "@/lib/chartSpec";
+import {
+  GENERAL_KNOWLEDGE_TOOL,
+  stashPendingToolCall,
+} from "@/lib/generalKnowledgeTool";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -265,22 +269,43 @@ export async function POST(req, { params }) {
     const systemMsg = {
       role: "system",
       content: `
-        You are an expert assistant answering questions about a single document.
-        You must use only the factual information contained in the provided document context.
+You are an expert assistant answering questions about a single document.
 
-        You may:
-        - Summarize parts of the document
-        - Explain concepts from the document
-        - Rewrite or rephrase document content
-        - Generate new text (letters, emails, reports, arguments, recommendations, proposals, essays, etc.)
-          as long as all factual information comes strictly from the document context.
+STEP 0 — do this check FIRST, before drafting any answer:
+Does fully answering this question require information that is NOT in the document context
+below — e.g. another company's or product's data, current/live/today's data, industry or
+market benchmarks, or general world knowledge the document doesn't cover?
+- If YES: you MUST call the consult_general_knowledge tool with a precise, self-contained
+  query for exactly that missing piece. Do this instead of answering. Do NOT say the
+  document doesn't contain the information, do NOT give a partial answer, do NOT guess —
+  call the tool. Example: "How does this margin compare to Tesla's?" -> call the tool with
+  a query like "What is Tesla's most recent reported operating margin?".
+- If NO (the question is fully within the document's own subject matter): continue to the
+  rules below and answer from the document context.
 
-        Rules:
-        - NEVER use information that is not present in the document context.
-        - NEVER invent facts, numbers, names, or claims.
-        - If the document does not fully answer the question, provide the closest accurate information the document contains (do not say "I don't know").
-        - Plain text only (no markdown, no bullets, no special formatting).
-        - Be concise, factual, and avoid assumptions.
+If a consult_general_knowledge tool result already appears earlier in this conversation,
+that content IS authorized outside information for this answer — use it directly to answer
+the comparison, noting briefly that it comes from general knowledge and may not be fully
+current. Do NOT refuse or redirect the user to look it up themselves once the tool has
+already supplied an answer.
+
+You must use only the factual information contained in the provided document context.
+
+You may:
+- Summarize parts of the document
+- Explain concepts from the document
+- Rewrite or rephrase document content
+- Generate new text (letters, emails, reports, arguments, recommendations, proposals, essays, etc.)
+  as long as all factual information comes strictly from the document context.
+
+Rules (apply only once STEP 0 has determined the tool is NOT needed):
+- NEVER use information that is not present in the document context.
+- NEVER invent facts, numbers, names, or claims.
+- If the document only partially covers an in-scope question, give the closest accurate
+  information it contains rather than saying "I don't know" — this fallback does NOT apply
+  when the missing piece is external/comparison data; that case is handled by STEP 0 above.
+- Plain text only (no markdown, no bullets, no special formatting).
+- Be concise, factual, and avoid assumptions.
       `.trim() + chartNote
     };
 
@@ -313,7 +338,9 @@ export async function POST(req, { params }) {
           model: "gpt-4o-mini",
           messages: [systemMsg, ...memoryMsgs, userMsgGPT],
           temperature: 0.2,
-          max_tokens: 700
+          max_tokens: 700,
+          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tool_choice: "auto"
         },
         {
           signal: controller.signal
@@ -357,6 +384,42 @@ export async function POST(req, { params }) {
     }
     finally {
       activeRequests.delete(requestId);
+    }
+
+    // ----------------------------
+    // 12.5) GENERAL-KNOWLEDGE TOOL CALL — never run silently; stash and ask
+    // the user for confirmation instead of answering directly.
+    // ----------------------------
+    const toolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall?.function?.name === "consult_general_knowledge") {
+      let query = "";
+      try {
+        query = JSON.parse(toolCall.function.arguments || "{}").query || "";
+      } catch {
+        query = "";
+      }
+
+      stashPendingToolCall(requestId, {
+        kind: "document",
+        conversationId,
+        userMsgId: userMsg.id,
+        baseMessages: [systemMsg, ...memoryMsgs, userMsgGPT],
+        assistantMessage: completion.choices[0].message,
+        toolCall,
+        query,
+        chartSpec,
+        ownerUserEmail: session.user.email,
+        apiKeyUserId: userId,
+        completionOptions: { model: "gpt-4o-mini", temperature: 0.2, max_tokens: 700 }
+      });
+
+      return NextResponse.json({
+        success: true,
+        needsConfirmation: true,
+        requestId,
+        conversationId,
+        query
+      });
     }
 
     const assistantText =

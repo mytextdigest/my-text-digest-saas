@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,12 @@ import MessageActions from './MessageActions';
 import ExpandedMessageModal from './ExpandedMessageModal';
 import ChartMessage from './ChartMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
+import { useChatEngine } from './useChatEngine';
+import {
+  GeneralKnowledgePermissionPrompt,
+  GeneralKnowledgeProgressChip,
+  ExternalKnowledgeBadge,
+} from './ExternalKnowledgeBadge';
 
 // Splits message text on cited document filenames and renders each one as a clickable button.
 const renderMessageContent = (content, citations, onCitationClick) => {
@@ -41,16 +47,12 @@ const renderMessageContent = (content, citations, onCitationClick) => {
 const ChatInterface = ({ className, projectId }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const abortControllerRef = useRef(null);
-  const currentRequestIdRef = useRef(null);
-  const [isCancelling, setIsCancelling] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
   const [expandedMessage, setExpandedMessage] = useState(null);
@@ -85,7 +87,8 @@ const ChatInterface = ({ className, projectId }) => {
               content: m.content,
               timestamp: new Date(m.timestamp),
               chart: m.chart || null,
-              citations: m.citations || null
+              citations: m.citations || null,
+              externalKnowledgeQuery: m.externalKnowledgeQuery || null
             }))
           );
         }
@@ -103,11 +106,58 @@ const ChatInterface = ({ className, projectId }) => {
   };
   useEffect(() => { scrollToBottom(); }, [messages]);
 
+  // --- Ask engine (send / cancel / general-knowledge confirmation) ---
+  const handleAskResult = useCallback((res) => {
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `ai-${Date.now()}`,
+        type: "assistant",
+        content: res.answer,
+        timestamp: new Date(),
+        chart: res.chart || null,
+        citations: res.citations || null,
+        externalKnowledgeQuery: res.externalKnowledgeQuery || null
+      }
+    ]);
+  }, []);
+
+  const handleAskError = useCallback((res) => {
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `ai-${Date.now()}`,
+        type: "assistant",
+        content: res?.error || "Failed to get response.",
+        timestamp: new Date()
+      }
+    ]);
+  }, []);
+
+  const ask = useCallback((question, requestId, signal) => {
+    return fetch("/api/projects/ask", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({ projectId, question, requestId })
+    }).then(r => r.json());
+  }, [projectId]);
+
+  const {
+    isTyping,
+    pendingConfirmation,
+    progress,
+    sendMessage,
+    respondToConfirmation,
+    cancelRequest,
+  } = useChatEngine({ ask, onResult: handleAskResult, onError: handleAskError });
+
   // --- Send message ---
-  const handleSendMessage = async (e) => {
+  const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputValue.trim() || !projectId) return;
-  
+
     const userMessage = {
       id: `user-${Date.now()}`,
       type: 'user',
@@ -115,101 +165,17 @@ const ChatInterface = ({ className, projectId }) => {
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
-  
+
     const question = inputValue;
     setInputValue('');
-    setIsTyping(true);
-  
-    // 🟢 Create AbortController + requestId
-    const controller = new AbortController();
-    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    abortControllerRef.current = controller;
-    currentRequestIdRef.current = requestId;
-  
-    try {
-      const res = await fetch("/api/projects/ask", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({ projectId, question, requestId })
-      }).then(r => r.json());
-  
-      // ⛔ Ignore stale / cancelled responses
-      if (
-        controller.signal.aborted ||
-        currentRequestIdRef.current !== requestId
-      ) {
-        return;
-      }
-  
-      if (res.success) {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `ai-${Date.now()}`,
-            type: "assistant",
-            content: res.answer,
-            timestamp: new Date(),
-            chart: res.chart || null,
-            citations: res.citations || null
-          }
-        ]);
-      } else if (!res.cancelled) {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `ai-${Date.now()}`,
-            type: "assistant",
-            content: res.error || "Failed to get response.",
-            timestamp: new Date()
-          }
-        ]);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError") {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `ai-${Date.now()}`,
-            type: "assistant",
-            content: "Error contacting project chat API.",
-            timestamp: new Date()
-          }
-        ]);
-      }
-    } finally {
-      setIsTyping(false);
-      setIsCancelling(false);
-      abortControllerRef.current = null;
-      currentRequestIdRef.current = null;
-    }
+
+    sendMessage(question);
   };
 
+  // --- Cancel Request ---
+  const handleCancelRequest = () => cancelRequest();
 
-  // --- Cancle Request ---
-  const handleCancelRequest = async () => {
-    if (!currentRequestIdRef.current) return;
-  
-    setIsCancelling(true);
-    setIsTyping(false);
-  
-    // Abort fetch immediately
-    abortControllerRef.current?.abort();
-  
-    // Notify backend (best-effort)
-    await fetch("/api/cancel", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId: currentRequestIdRef.current })
-    }).catch(() => {});
-  
-    currentRequestIdRef.current = null;
-    abortControllerRef.current = null;
-  };
-  
-  
+
 
   // --- Clear project chat ---
   const handleClearChat = () => {
@@ -421,6 +387,10 @@ const ChatInterface = ({ className, projectId }) => {
                         <ChartMessage spec={message.chart} />
                       )}
 
+                      {message.type === 'assistant' && (
+                        <ExternalKnowledgeBadge query={message.externalKnowledgeQuery} />
+                      )}
+
                     </div>
 
 
@@ -428,8 +398,8 @@ const ChatInterface = ({ className, projectId }) => {
                 ))}
               </AnimatePresence>
 
-              {/* Typing Indicator */}
-              {isTyping && (
+              {/* General-Knowledge Permission Prompt */}
+              {pendingConfirmation && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -438,25 +408,47 @@ const ChatInterface = ({ className, projectId }) => {
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 shadow-md border border-gray-200 dark:border-gray-700">
-                    <div className="flex space-x-1">
-                      <motion.div
-                        animate={{ y: [0, -4, 0] }}
-                        transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-                        className="w-2 h-2 bg-purple-500 rounded-full"
-                      />
-                      <motion.div
-                        animate={{ y: [0, -4, 0] }}
-                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-                        className="w-2 h-2 bg-purple-500 rounded-full"
-                      />
-                      <motion.div
-                        animate={{ y: [0, -4, 0] }}
-                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-                        className="w-2 h-2 bg-purple-500 rounded-full"
-                      />
-                    </div>
+                  <GeneralKnowledgePermissionPrompt
+                    query={pendingConfirmation.query}
+                    onApprove={() => respondToConfirmation(true)}
+                    onDecline={() => respondToConfirmation(false)}
+                  />
+                </motion.div>
+              )}
+
+              {/* Typing Indicator */}
+              {isTyping && !pendingConfirmation && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-start space-x-3"
+                >
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-white" />
                   </div>
+                  {progress?.stage === 'consulting_general_knowledge' ? (
+                    <GeneralKnowledgeProgressChip />
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 shadow-md border border-gray-200 dark:border-gray-700">
+                      <div className="flex space-x-1">
+                        <motion.div
+                          animate={{ y: [0, -4, 0] }}
+                          transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                          className="w-2 h-2 bg-purple-500 rounded-full"
+                        />
+                        <motion.div
+                          animate={{ y: [0, -4, 0] }}
+                          transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                          className="w-2 h-2 bg-purple-500 rounded-full"
+                        />
+                        <motion.div
+                          animate={{ y: [0, -4, 0] }}
+                          transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                          className="w-2 h-2 bg-purple-500 rounded-full"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
               <div ref={messagesEndRef} />
