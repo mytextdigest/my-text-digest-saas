@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { prisma } from "@/lib/prisma";
 import { generateSignedUrl } from "@/lib/s3SignedUrl";
 import { computeDocumentEmbedding, adjustTopicOnDocumentRemoval } from "@/lib/topicUtils";
+import s3Client from "@/lib/s3.mjs";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -75,6 +77,7 @@ export async function DELETE(req, { params }) {
     where: { id, user: { email: session.user.email } },
     include: {
       topicDocument: { include: { topic: true } },
+      figures: { select: { s3Key: true } },
     },
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -93,10 +96,24 @@ export async function DELETE(req, { params }) {
     }
   }
 
-  // Delete document and its relations
+  // Best-effort S3 cleanup for the document's figure image objects — new
+  // usage this feature introduces, so it needs cleanup even though the
+  // document's own S3 object isn't deleted here either (pre-existing gap).
+  await Promise.all(
+    doc.figures.map((figure) =>
+      s3Client
+        .send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: figure.s3Key }))
+        .catch((err) => console.error(`⚠️  Failed to delete figure S3 object (${figure.s3Key}):`, err.message))
+    )
+  );
+
+  // Delete document and its relations. Figures must be removed before
+  // chunks — Figure.chunkId references Chunk, so deleting chunks first
+  // would leave a dangling FK.
   await prisma.$transaction(async (tx) => {
     await tx.message.deleteMany({ where: { conversation: { documentId: id } } });
     await tx.conversation.deleteMany({ where: { documentId: id } });
+    await tx.figure.deleteMany({ where: { documentId: id } });
     await tx.chunk.deleteMany({ where: { documentId: id } });
     await tx.document.delete({ where: { id } });
   });

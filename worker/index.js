@@ -11,6 +11,7 @@ import nodemailer from "nodemailer";
 import { createStructuredSummary, summarizeChunks } from "./summarize.js";
 import { getOpenAIForDocument } from "./openai.js";
 import { processClusterJobWorker } from "./cluster.js";
+import { processFigureJob } from "./processFigures.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -332,6 +333,24 @@ async function processChunkJob(job) {
     })
   );
 
+  // Forked, non-blocking figures stage — enqueued alongside (not chained
+  // into) the embed job so vision captioning never delays the main
+  // pipeline reaching Document.status: "ready". Needs s3Key, unlike
+  // embed/summarize/cluster which don't carry the file itself.
+  await sqs.send(
+    new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: JSON.stringify({
+        type: "figures",
+        docId,
+        s3Key,
+        filename,
+        projectId: projectId || existingDoc.projectId,
+        userId: existingDoc.userId,
+      }),
+    })
+  );
+
   console.log(`✅ Chunk job complete: ${docId}`);
   endTotal();
 }
@@ -530,6 +549,7 @@ async function processJob(job) {
   if (job.type === "embed")    return processEmbeddingJob(job);
   if (job.type === "summarize") return processSummarizationJob(job);
   if (job.type === "cluster")  return processClusterJobWorker(job.docId, job.projectId, job.recluster ?? false);
+  if (job.type === "figures")  return processFigureJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }

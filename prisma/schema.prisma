@@ -79,6 +79,7 @@ model Document {
   topicDocument  TopicDocument?
   project        Project?       @relation(fields: [projectId], references: [id])
   user           User           @relation(fields: [userId], references: [id])
+  figures        Figure[]
 }
 
 model Chunk {
@@ -90,6 +91,27 @@ model Chunk {
   metadata   Json?
   documentId String   @map("document_id")
   document   Document @relation(fields: [documentId], references: [id])
+  figures    Figure[]
+}
+
+model Figure {
+  id           String   @id @default(cuid())
+  documentId   String   @map("document_id")
+  figureIndex  Int      @map("figure_index")
+  pageNumber   Int?     @map("page_number")
+  sourceType   String   @map("source_type")   // "pdf_image" | "docx_media"
+  s3Key        String   @map("s3_key")
+  width        Int?
+  height       Int?
+  format       String?
+  caption      String?
+  ocrText      String?  @map("ocr_text")
+  chunkId      String?  @map("chunk_id")
+  status       String   @default("pending")   // pending | captioning | ready | error
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+  document     Document @relation(fields: [documentId], references: [id])
+  chunk        Chunk?   @relation(fields: [chunkId], references: [id])
 }
 
 model Conversation {

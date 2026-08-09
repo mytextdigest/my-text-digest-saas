@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -16,6 +16,7 @@ import MessageActions from "@/components/chat/MessageActions";
 import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
 import ChartMessage from "@/components/chat/ChartMessage";
 import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
+import FiguresGallery from "@/components/documents/FiguresGallery";
 
 
 
@@ -32,7 +33,7 @@ function DocumentContent() {
   const [chat, setChat] = useState([]);
   const [question, setQuestion] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' or 'summary'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'summary', 'guide', or 'figures'
   const [summary, setSummary] = useState(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const chatEndRef = useRef(null);
@@ -67,6 +68,7 @@ function DocumentContent() {
   const ext = doc?.filename?.split('.').pop().toLowerCase() ?? '';
   const isSpreadsheet = ['csv', 'xlsx', 'xls'].includes(ext);
   const noGuideTab = ['jpg','jpeg','png','webp','gif','bmp','xlsx','xls','csv'].includes(ext);
+  const showFiguresTab = ['pdf','docx'].includes(ext);
 
   // Derive a per-sheet breakdown from chunk metadata stored during ingestion
   // (workbookName, sheetName, rowRange, columnHeaders — see worker/extractSpreadsheet.js)
@@ -160,7 +162,8 @@ function DocumentContent() {
 
   useEffect(() => {
     if (noGuideTab && activeTab === 'guide') setActiveTab('chat');
-  }, [noGuideTab, activeTab]);
+    if (!showFiguresTab && activeTab === 'figures') setActiveTab('chat');
+  }, [noGuideTab, showFiguresTab, activeTab]);
 
   const handleDocPageChange = useCallback((pageNum) => {
     setDetectedPage(pageNum);
@@ -920,6 +923,22 @@ function DocumentContent() {
                 <span>Pagewise Summary</span>
               </Button>
             )}
+            {showFiguresTab && (
+              <Button
+                variant={activeTab === 'figures' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('figures')}
+                className={cn(
+                  "flex items-center space-x-2",
+                  activeTab === 'figures'
+                    ? "text-white dark:text-gray-200"
+                    : "text-gray-600 dark:text-gray-400"
+                )}
+              >
+                <ImageIcon className="h-4 w-4" />
+                <span>Figures</span>
+              </Button>
+            )}
           </div>
         </CardHeader>
 
@@ -1031,6 +1050,10 @@ function DocumentContent() {
                   <p className="text-xs text-gray-400">Scroll through the document — insights appear automatically.</p>
                 )}
               </div>
+            </div>
+          ) : activeTab === 'figures' ? (
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
+              <FiguresGallery documentId={id} />
             </div>
           ) : activeTab === 'chat' ? (
             <div className="chat-container">
