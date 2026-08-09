@@ -305,6 +305,23 @@ function ProjectPageInner() {
     }
   };
 
+  const handleRetry = async (id) => {
+    try {
+      const res = await fetch(`/api/documents/${id}/retry`, { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        console.error("Retry failed:", data.error);
+        return;
+      }
+
+      // Doc is back in a processing status — loadDocuments() will resume polling.
+      await loadDocuments();
+    } catch (err) {
+      console.error("Retry failed:", err);
+    }
+  };
+
   const handleRename = (doc) => {
     setDocumentToRename(doc);
     setShowRenameModal(true);
@@ -449,6 +466,7 @@ function ProjectPageInner() {
           onToggleStar={handleToggleStar}
           onToggleSelect={handleToggleSelect}
           onRename={handleRename}
+          onRetry={handleRetry}
           onTopicsChange={async () => { await loadDocuments(); await loadTopics(); }}
           onReclusterUnassigned={handleRecluster}
           activeFilter={activeFilter}

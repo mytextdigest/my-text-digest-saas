@@ -1,5 +1,6 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { extractPdfText } from "./extractPdf.js";
 import { extractSpreadsheetChunks } from "./extractSpreadsheet.js";
 import { runOCR } from "./runOcr.js";
@@ -17,10 +18,33 @@ const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const sqs = new SQSClient({});
-const s3 = new S3Client({});
+// Idle-socket timeouts on the AWS clients — without these, a stalled network
+// call to SQS/S3 hangs the single-threaded mainLoop forever, blocking every
+// other user's queued job behind it, not just the one that's stuck.
+const sqs = new SQSClient({
+  requestHandler: new NodeHttpHandler({ connectionTimeout: 5000, requestTimeout: 30000 }), // > the 20s long-poll wait
+});
+const s3 = new S3Client({
+  requestHandler: new NodeHttpHandler({ connectionTimeout: 5000, requestTimeout: 60000 }),
+});
 const prisma = new PrismaClient();
 // const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// Overall watchdog per job — must stay comfortably under the SQS
+// VisibilityTimeout (600s) below so a timed-out job's status update lands
+// before SQS could otherwise redeliver the same message to another worker.
+const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS) || 8 * 60 * 1000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(Object.assign(new Error(`Job timed out after ${ms}ms: ${label}`), { errorCode: "JOB_TIMEOUT" })),
+      ms
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 async function streamToBuffer(stream) {
   const chunks = [];
@@ -36,12 +60,71 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-function chunkText(text, size = 2000) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += size)
-    chunks.push(text.slice(i, i + size));
+// Splits on sentence boundaries — used to break up a paragraph that alone
+// exceeds the chunk size, without falling back to a mid-word hard cut.
+const SENTENCE_SPLIT_RE = /(?<=[.?!])\s+(?=[A-Z0-9"'(])/;
 
-  return chunks;
+function splitOversizedUnit(unit, size) {
+  if (unit.length <= size) return [unit];
+
+  const sentences = unit.split(SENTENCE_SPLIT_RE);
+  if (sentences.length > 1) {
+    return sentences.flatMap((s) => splitOversizedUnit(s, size));
+  }
+
+  // No sentence boundary found (e.g. one giant run-on line) — last resort
+  // hard slice, same as the old behavior, but only for this one unit.
+  const pieces = [];
+  for (let i = 0; i < unit.length; i += size) pieces.push(unit.slice(i, i + size));
+  return pieces;
+}
+
+// Paragraph/sentence-aware chunking with overlap: packs whole paragraphs
+// (falling back to sentences, then a hard cut, only when a single paragraph
+// itself exceeds `size`) into chunks up to `size` chars, and carries the
+// tail paragraphs/sentences of each chunk into the start of the next so a
+// fact sitting near a chunk boundary still appears whole in at least one chunk.
+function chunkText(text, size = 2000, overlap = Math.round(size * 0.15)) {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const units = paragraphs.flatMap((p) => splitOversizedUnit(p, size));
+
+  const chunks = [];
+  let current = [];
+  let currentLen = 0;
+
+  const flush = () => {
+    if (current.length > 0) chunks.push(current.join("\n\n"));
+  };
+
+  for (const unit of units) {
+    const addLen = unit.length + (current.length > 0 ? 2 : 0);
+
+    if (currentLen > 0 && currentLen + addLen > size) {
+      flush();
+
+      // Carry trailing units from the chunk just flushed until the carried
+      // text reaches ~`overlap` chars, forming the start of the next chunk.
+      const carried = [];
+      let carriedLen = 0;
+      for (let i = current.length - 1; i >= 0 && carriedLen < overlap; i--) {
+        carried.unshift(current[i]);
+        carriedLen += current[i].length + 2;
+      }
+      current = carried;
+      currentLen = carriedLen;
+    }
+
+    current.push(unit);
+    currentLen += addLen;
+  }
+
+  flush();
+
+  return chunks.length > 0 ? chunks : [text];
 }
 
 
@@ -91,7 +174,10 @@ async function processChunkJob(job) {
   const endTotal = startTimer("CHUNK JOB TOTAL", { docId });
 
 
-  const chunkSize = visibility === "public" ? 12000 : 10000;
+  // Typical RAG chunk sizes (~1,500-2,000 chars) rather than the old
+  // 10,000-12,000 — smaller chunks keep embeddings sharply on-topic instead
+  // of diluted across many unrelated sections, improving retrieval precision.
+  const chunkSize = visibility === "public" ? 2200 : 1800;
   const BATCH_SIZE = 20; // SAFE for Prisma + Postgres
 
   // -----------------------------
@@ -168,7 +254,7 @@ async function processChunkJob(job) {
           where: { id: docId },
           data: { status: "ocr_failed" },
         });
-        throw Object.assign(err, { errorCode: "OCR_FAILED" });
+        throw Object.assign(err, { errorCode: "OCR_FAILED", statusAlreadySet: true });
       }
       endOcr();
     } else {
@@ -218,7 +304,7 @@ async function processChunkJob(job) {
       where: { id: docId },
       data: { status: "chunk_failed" },
     });
-    throw new Error(`Extracted text empty or invalid for doc ${docId}`);
+    throw Object.assign(new Error(`Extracted text empty or invalid for doc ${docId}`), { statusAlreadySet: true });
   }
 
   await prisma.document.update({
@@ -248,7 +334,7 @@ async function processChunkJob(job) {
       where: { id: docId },
       data: { status: "chunk_failed" },
     });
-    throw new Error(`No valid chunks generated for doc ${docId}`);
+    throw Object.assign(new Error(`No valid chunks generated for doc ${docId}`), { statusAlreadySet: true });
   }
 
 
@@ -287,7 +373,7 @@ async function processChunkJob(job) {
     });
 
     // IMPORTANT: fail hard → SQS retry
-    throw err;
+    throw Object.assign(err, { statusAlreadySet: true });
   }
 
   // -----------------------------
@@ -559,14 +645,24 @@ async function mainLoop() {
   console.log("Worker started. Waiting for jobs...");
 
   while (true) {
-    const res = await sqs.send(
-      new ReceiveMessageCommand({
-        QueueUrl: QUEUE_URL,
-        MaxNumberOfMessages: 1,
-        WaitTimeSeconds: 20,
-        VisibilityTimeout: 600,
-      })
-    );
+    let res;
+    try {
+      res = await sqs.send(
+        new ReceiveMessageCommand({
+          QueueUrl: QUEUE_URL,
+          MaxNumberOfMessages: 1,
+          WaitTimeSeconds: 20,
+          VisibilityTimeout: 600,
+        })
+      );
+    } catch (err) {
+      // A transient SQS error (throttling, network blip, brief AWS outage)
+      // must not crash the whole worker process — that would silently stop
+      // every user's pipeline until someone notices and restarts it by hand.
+      console.error("❌ SQS receive error:", err.message);
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
 
     if (!res.Messages || res.Messages.length === 0) continue;
 
@@ -574,7 +670,7 @@ async function mainLoop() {
     const body = JSON.parse(msg.Body);
 
     try {
-      await processJob(body);
+      await withTimeout(processJob(body), JOB_TIMEOUT_MS, body.type);
 
       await sqs.send(
         new DeleteMessageCommand({
@@ -584,8 +680,52 @@ async function mainLoop() {
       );
     } catch (err) {
       console.error("❌ Worker error:", err);
+      await recordJobFailure(body, err);
     }
   }
 }
 
-mainLoop();
+// Surfaces a failed job on the Document row so the UI can show a "Failed" +
+// Retry state instead of leaving it spinning forever behind an SQS retry the
+// user has no visibility into. Does NOT delete the SQS message — SQS's own
+// maxReceiveCount/DLQ redrive is still the retry mechanism; this is purely
+// for user-facing status.
+//
+// Cluster jobs are excluded: processClusterJobWorker already treats
+// clustering failures as non-blocking (chat must stay usable even if topic
+// matching fails), so only a watchdog timeout reaches this catch for that
+// job type, and marking the doc "failed" here would fight with the
+// in-flight cluster job that will still resolve it to "ready" on its own.
+// Figures jobs are excluded for the same reason: processFigureJob already
+// catches every internal error itself and never throws, so only a watchdog
+// timeout would reach this catch — and figure captioning failures must
+// never flip a document the user can already chat with into "failed".
+async function recordJobFailure(body, err) {
+  const docId = body?.docId;
+  if (!docId || body.type === "cluster" || body.type === "figures") return;
+
+  const data = {
+    lastError: String(err?.message || err).slice(0, 2000),
+    failedStage: body.type,
+    failedAt: new Date(),
+  };
+  if (!err.statusAlreadySet) data.status = "failed";
+
+  try {
+    await prisma.document.update({ where: { id: docId }, data });
+  } catch (updateErr) {
+    console.error("❌ Failed to record job failure on document:", updateErr.message);
+  }
+}
+
+// mainLoop() only ever settles on a bug we didn't anticipate — every
+// expected failure path is caught inside the loop already. Restart rather
+// than let the whole worker die and sit there until someone notices.
+function startWorker() {
+  mainLoop().catch((err) => {
+    console.error("❌ mainLoop crashed, restarting in 5s:", err);
+    setTimeout(startWorker, 5000);
+  });
+}
+
+startWorker();

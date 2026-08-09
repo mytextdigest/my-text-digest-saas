@@ -25,6 +25,7 @@ export default function TopicsView({
   onToggleStar,
   onToggleSelect,
   onRename,
+  onRetry,
   onTopicsChange,
   onReclusterUnassigned,
   activeFilter = 'all',
@@ -61,7 +62,7 @@ export default function TopicsView({
     }
   }
 
-  const docCallbacks = { onView, onDelete, onToggleStar, onToggleSelect, onRename };
+  const docCallbacks = { onView, onDelete, onToggleStar, onToggleSelect, onRename, onRetry };
 
   const handleDragStart = ({ active }) => {
     setActiveDocData(active?.data?.current ?? null);

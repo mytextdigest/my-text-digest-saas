@@ -26,6 +26,7 @@ const DocumentGrid = ({
   onToggleStar,
   onToggleSelect,
   onRename,
+  onRetry,
   activeFilter = 'all',
   onFilterChange,
   className
@@ -384,6 +385,7 @@ const DocumentGrid = ({
                     onToggleStar={onToggleStar}
                     onToggleSelect={onToggleSelect}
                     onRename={onRename}
+                    onRetry={onRetry}
                   />
                 </motion.div>
               ))}

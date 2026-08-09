@@ -26,5 +26,8 @@ export async function getOpenAIForDocument(docId) {
 
   return new OpenAI({
     apiKey: doc.user.settings[0].value,
+    // Fail fast into the job's watchdog/retry path instead of hanging the
+    // single-threaded worker loop on a stalled request.
+    timeout: 120 * 1000,
   });
 }

@@ -18,6 +18,7 @@ export default function TopicGroup({
   onView,
   onDelete,
   onToggleStar,
+  onRetry,
   onToggleSelect,
   onRename,
   defaultExpanded = true,
@@ -265,6 +266,7 @@ export default function TopicGroup({
                       onToggleStar={onToggleStar}
                       onToggleSelect={onToggleSelect}
                       onRename={onRename}
+                      onRetry={onRetry}
                     />
                   </DraggableDocumentRow>
                 ))}

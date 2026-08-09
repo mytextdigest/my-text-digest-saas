@@ -11,6 +11,7 @@ import {
   ScanLine,
   Sheet,
   Image,
+  RotateCcw,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +21,8 @@ const PROCESSING_STATUSES = new Set([
   'queued', 'extracting', 'running_ocr', 'chunked', 'embedding', 'embedded', 'summarizing', 'clustering',
 ]);
 
+const FAILED_STATUSES = new Set(['failed', 'chunk_failed', 'ocr_failed', 'error']);
+
 const DocumentCard = ({
   document,
   viewMode = 'grid',
@@ -28,11 +31,13 @@ const DocumentCard = ({
   onToggleStar,
   onToggleSelect,
   onRename,
+  onRetry,
   className,
 }) => {
   const { id, filename, created_at, file_size, starred = false } = document;
 
   const isProcessing = PROCESSING_STATUSES.has(document.status);
+  const isFailed = FAILED_STATUSES.has(document.status);
 
   const fileIcon = getFileIcon(filename);
   const IconComponent = {
@@ -76,6 +81,7 @@ const DocumentCard = ({
       case 'ocr_failed':
         return { label: 'OCR failed', icon: AlertCircle, spin: false, className: 'text-red-600 dark:text-red-400' };
       case 'chunk_failed':
+      case 'failed':
       case 'error':
         return { label: 'Processing failed', icon: AlertCircle, spin: false, className: 'text-red-600 dark:text-red-400' };
       default:
@@ -132,9 +138,20 @@ const DocumentCard = ({
               {file_size && <span className="truncate">{file_size}</span>}
             </div>
             {statusBadge && (
-              <div className={cn('flex items-center gap-1 mt-1 text-xs font-medium', statusBadge.className)}>
+              <div className={cn('flex items-center gap-1 mt-1 text-xs font-medium', statusBadge.className)} title={document.lastError || undefined}>
                 <statusBadge.icon className={cn('w-3 h-3', statusBadge.spin && 'animate-spin')} />
                 <span>{statusBadge.label}</span>
+                {isFailed && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onRetry?.(id); }}
+                    className="ml-1 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                    title="Retry processing"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Retry
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -240,9 +257,20 @@ const DocumentCard = ({
                     </span>
                   )}
                   {statusBadge && (
-                    <div className={cn('flex items-center gap-1 text-[11px] font-medium', statusBadge.className)}>
+                    <div className={cn('flex items-center gap-1 text-[11px] font-medium', statusBadge.className)} title={document.lastError || undefined}>
                       <statusBadge.icon className={cn('w-3 h-3', statusBadge.spin && 'animate-spin')} />
                       <span>{statusBadge.label}</span>
+                      {isFailed && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onRetry?.(id); }}
+                          className="ml-1 inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
+                          title="Retry processing"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Retry
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

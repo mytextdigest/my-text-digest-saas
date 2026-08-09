@@ -66,6 +66,9 @@ model Document {
   content       String?
   summary       String?
   status        String?        @default("pending")
+  lastError     String?        @map("last_error")
+  failedStage   String?        @map("failed_stage")
+  failedAt      DateTime?      @map("failed_at")
   createdAt     DateTime       @default(now()) @map("created_at")
   starred       Int?           @default(0)
   userId        String

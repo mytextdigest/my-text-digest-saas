@@ -39,6 +39,7 @@ export async function GET(req) {
         visibility: true,
         status: true,
         content: true,
+        lastError: true,
         topicDocument: {
           select: {
             confidence: true,
