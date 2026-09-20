@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Bot, User, X, Sparkles } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/Card"
 import MessageActions from "@/components/chat/MessageActions"
+import InsightView from "@/components/insights/InsightView"
 import { cn } from "@/lib/utils"
 
 export default function ExpandedMessageModal({
@@ -176,19 +177,23 @@ export default function ExpandedMessageModal({
                 {/* Scroll container */}
                 <div className="max-h-[60vh] overflow-y-auto pr-2">
 
-                  <div
-                    className={cn(
-                      "whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200",
-                      {
-                        "text-sm": fontSize === "sm",
-                        "text-base": fontSize === "md",
-                        "text-lg": fontSize === "lg",
-                        "text-xl": fontSize === "xl",
-                      }
-                    )}
-                  >
-                    {message.content}
-                  </div>
+                  {message.insight ? (
+                    <InsightView insight={message.insight} dividers={false} textSize={fontSize} />
+                  ) : (
+                    <div
+                      className={cn(
+                        "whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200",
+                        {
+                          "text-sm": fontSize === "sm",
+                          "text-base": fontSize === "md",
+                          "text-lg": fontSize === "lg",
+                          "text-xl": fontSize === "xl",
+                        }
+                      )}
+                    >
+                      {message.content}
+                    </div>
+                  )}
 
                 </div>
 

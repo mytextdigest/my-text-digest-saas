@@ -12,6 +12,7 @@ import {
 } from "@/lib/generalKnowledgeTool";
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { COMPARE_DOCUMENTS_TOOL, runCompareDocumentsTool } from "@/lib/compareQueryTool";
+import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -575,6 +576,39 @@ BM25 retrieval has selected the most relevant chunks.
 
     const docMeta = docs.map((d, i) => `${i + 1}. ${d.filename}`).join("\n");
     const context = `Project contains ${docs.length} documents:\n${docMeta}\n\n${contextBlocks.join("\n\n")}`;
+
+    // 10.4) DEEP ANALYSIS / INSIGHT MODE — decision 2: checked before chart
+    // detection and the main factual-answer call, and runs INSTEAD of them.
+    // Applied only to this main cosine-similarity branch (mirrors the
+    // Comparison/Citations specs' precedent of treating the BM25-fallback
+    // branch above as a transient state not worth the extra code path). A
+    // null result falls through to the existing flow unchanged.
+    const analysisMode = detectAnalysisIntent(question);
+    if (!controller.signal.aborted && analysisMode) {
+      const analysisResult = await buildAnalysis({
+        openai,
+        question,
+        context,
+        signal: controller.signal,
+        mode: analysisMode,
+      });
+
+      if (analysisResult) {
+        await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+        await prisma.projectMessage.create({
+          data: {
+            conversationId: conv.id,
+            role: "assistant",
+            content: analysisResult.fallbackText,
+            status: "done",
+            insightJson: analysisResult.insight,
+          },
+        });
+
+        return NextResponse.json({ success: true, answer: analysisResult.fallbackText, insight: analysisResult.insight });
+      }
+      // fall through to the existing chart/tool/factual flow below
+    }
 
     // 10.5) CHART GENERATION — runs BEFORE the main answer call so the answer
     // can react to whether a chart was actually produced (see chartNote below).

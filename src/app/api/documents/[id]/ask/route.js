@@ -14,6 +14,7 @@ import {
   stashPendingToolCall,
 } from "@/lib/generalKnowledgeTool";
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
+import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -208,6 +209,45 @@ export async function POST(req, { params }) {
     const contextText = selected
       .map(c => `Chunk ${c.chunkIndex}:\n${c.text}`)
       .join("\n\n");
+
+    // ----------------------------
+    // 10.4) DEEP ANALYSIS / INSIGHT MODE — decision 2: checked before chart
+    // detection and the main factual-answer call, and runs INSTEAD of them
+    // (not layered on top). A null result (empty/malformed model output)
+    // falls through to the existing flow unchanged — must never block the
+    // user from getting some answer.
+    // ----------------------------
+    const analysisMode = detectAnalysisIntent(question);
+    if (!controller.signal.aborted && analysisMode) {
+      const analysisResult = await buildAnalysis({
+        openai,
+        question,
+        context: contextText,
+        signal: controller.signal,
+        mode: analysisMode,
+      });
+
+      if (analysisResult) {
+        await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
+        await prisma.message.create({
+          data: {
+            conversationId,
+            role: "assistant",
+            content: analysisResult.fallbackText,
+            status: "done",
+            insightJson: analysisResult.insight,
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          conversationId,
+          answer: analysisResult.fallbackText,
+          insight: analysisResult.insight,
+        });
+      }
+      // fall through to the existing chart/tool/factual flow below
+    }
 
     // ----------------------------
     // 10.5) CHART GENERATION — runs BEFORE the main answer call so the answer

@@ -188,6 +188,7 @@ model Message {
   conversationId         String       @map("conversation_id")
   chartData              Json?        @map("chart_data")
   externalKnowledgeQuery String?      @map("external_knowledge_query")
+  insightJson            Json?        @map("insight_json")
   conversation           Conversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -212,6 +213,7 @@ model ProjectMessage {
   citations              Json?               @map("citations")
   externalKnowledgeQuery String?             @map("external_knowledge_query")
   comparisonId           String?             @map("comparison_id")
+  insightJson            Json?               @map("insight_json")
   conversation           ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 

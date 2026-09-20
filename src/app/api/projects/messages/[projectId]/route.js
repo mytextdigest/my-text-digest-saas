@@ -42,6 +42,7 @@ export async function GET(req, { params }) {
       citations: m.citations || null,
       externalKnowledgeQuery: m.externalKnowledgeQuery || null,
       comparisonId: m.comparisonId || null,
+      insight: m.insightJson || null,
     }));
 
     return NextResponse.json({ success: true, messages: mapped });

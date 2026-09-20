@@ -14,6 +14,7 @@ import ChartMessage from './ChartMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
 import ProjectGraphView from '@/components/graph/ProjectGraphView';
 import ComparisonsView from '@/components/documents/ComparisonsView';
+import InsightView from '@/components/insights/InsightView';
 import { useChatEngine } from './useChatEngine';
 import {
   GeneralKnowledgePermissionPrompt,
@@ -94,7 +95,8 @@ const ChatInterface = ({ className, projectId }) => {
               chart: m.chart || null,
               citations: m.citations || null,
               externalKnowledgeQuery: m.externalKnowledgeQuery || null,
-              comparisonId: m.comparisonId || null
+              comparisonId: m.comparisonId || null,
+              insight: m.insight || null
             }))
           );
         }
@@ -124,7 +126,8 @@ const ChatInterface = ({ className, projectId }) => {
         chart: res.chart || null,
         citations: res.citations || null,
         externalKnowledgeQuery: res.externalKnowledgeQuery || null,
-        comparisonId: res.comparisonId || null
+        comparisonId: res.comparisonId || null,
+        insight: res.insight || null
       }
     ]);
   }, []);
@@ -434,9 +437,13 @@ const ChatInterface = ({ className, projectId }) => {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
                         )}
                       >
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
-                          {renderMessageContent(message.content, message.citations, (c) => setPreviewDocumentId(c.id))}
-                        </p>
+                        {message.type === 'assistant' && message.insight ? (
+                          <InsightView insight={message.insight} dividers={false} />
+                        ) : (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
+                            {renderMessageContent(message.content, message.citations, (c) => setPreviewDocumentId(c.id))}
+                          </p>
+                        )}
                       </div>
 
                       {/* ACTION BUTTONS BELOW */}

@@ -15,6 +15,7 @@ import DocViewer, { DocViewerRenderers } from "react-doc-viewer";
 import MessageActions from "@/components/chat/MessageActions";
 import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
 import ChartMessage from "@/components/chat/ChartMessage";
+import InsightView from "@/components/insights/InsightView";
 import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
 import FiguresGallery from "@/components/documents/FiguresGallery";
 import GraphView from "@/components/documents/GraphView";
@@ -374,7 +375,8 @@ function DocumentContent() {
               content: m.content,
               timestamp: new Date(m.createdAt || m.created_at),
               chart: m.chartData || null,
-              externalKnowledgeQuery: m.externalKnowledgeQuery || null
+              externalKnowledgeQuery: m.externalKnowledgeQuery || null,
+              insight: m.insightJson || null
             }));
   
             // preserve system welcome message
@@ -543,7 +545,8 @@ function DocumentContent() {
         content: res.answer,
         timestamp: new Date(),
         chart: res.chart || null,
-        externalKnowledgeQuery: res.externalKnowledgeQuery || null
+        externalKnowledgeQuery: res.externalKnowledgeQuery || null,
+        insight: res.insight || null
       }
     ]);
 
@@ -1111,9 +1114,13 @@ function DocumentContent() {
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
                         )}
                       >
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
-                          {message.content}
-                        </p>
+                        {message.role === 'assistant' && message.insight ? (
+                          <InsightView insight={message.insight} dividers={false} />
+                        ) : (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
+                            {message.content}
+                          </p>
+                        )}
                       </div>
 
                       {/* ACTION BUTTONS BELOW */}
