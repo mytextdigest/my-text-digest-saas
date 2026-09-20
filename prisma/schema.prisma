@@ -83,6 +83,8 @@ model Document {
   project        Project?       @relation(fields: [projectId], references: [id])
   user           User           @relation(fields: [userId], references: [id])
   figures        Figure[]
+  slideDecks     SlideDeck[]
+  slideImages    SlideImage[]
 }
 
 model Chunk {
@@ -115,6 +117,41 @@ model Figure {
   createdAt    DateTime @default(now()) @map("created_at")
   document     Document @relation(fields: [documentId], references: [id])
   chunk        Chunk?   @relation(fields: [chunkId], references: [id])
+}
+
+model SlideDeck {
+  id           String   @id @default(cuid())
+  documentId   String   @map("document_id")
+  title        String?
+  theme        String? // palette NAME, not hex
+  slideCount   Int      @default(0) @map("slide_count")
+  s3Key        String?  @map("s3_key") // rendered .pptx object key, replaces file_path
+  status       String   @default("generating") // generating|outline_review|ready|error
+  errorMessage String?  @map("error_message")
+  outlineJson  Json?    @map("outline_json") // full structured outline, or transient plain-text shape during outline_review
+  brandKitJson Json?    @map("brand_kit_json")
+  customPrompt String?  @map("custom_prompt")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+}
+
+model SlideImage {
+  id         String   @id @default(cuid())
+  documentId String   @map("document_id")
+  s3Key      String   @map("s3_key")
+  width      Int?
+  height     Int?
+  format     String?
+  source     String   @default("upload") // "upload" | "generated"
+  prompt     String? // only set when source = "generated"
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
 }
 
 model Conversation {

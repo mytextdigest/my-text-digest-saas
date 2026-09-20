@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon, Presentation } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -17,6 +17,7 @@ import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
 import ChartMessage from "@/components/chat/ChartMessage";
 import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
 import FiguresGallery from "@/components/documents/FiguresGallery";
+import SlidesView from "@/components/slides/SlidesView";
 import { useChatEngine } from "@/components/chat/useChatEngine";
 import {
   GeneralKnowledgePermissionPrompt,
@@ -38,7 +39,11 @@ function DocumentContent() {
   const [doc, setDoc] = useState(null);
   const [chat, setChat] = useState([]);
   const [question, setQuestion] = useState("");
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'summary', 'guide', or 'figures'
+  // 'chat', 'summary', 'guide', 'figures', or 'slides' — initialized from a
+  // `?tab=` deep link (the slide editor/outline-review routes navigate back
+  // here with `tab=slides` on Close/Done) so leaving those pages lands back
+  // on the tab the user came from instead of resetting to 'chat'.
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'chat');
   const [summary, setSummary] = useState(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const chatEndRef = useRef(null);
@@ -902,6 +907,20 @@ function DocumentContent() {
                 <span>Figures</span>
               </Button>
             )}
+            <Button
+              variant={activeTab === 'slides' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTab('slides')}
+              className={cn(
+                "flex items-center space-x-2",
+                activeTab === 'slides'
+                  ? "text-white dark:text-gray-200"
+                  : "text-gray-600 dark:text-gray-400"
+              )}
+            >
+              <Presentation className="h-4 w-4" />
+              <span>Slides</span>
+            </Button>
           </div>
         </CardHeader>
 
@@ -1017,6 +1036,10 @@ function DocumentContent() {
           ) : activeTab === 'figures' ? (
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
               <FiguresGallery documentId={id} />
+            </div>
+          ) : activeTab === 'slides' ? (
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
+              <SlidesView docId={id} />
             </div>
           ) : activeTab === 'chat' ? (
             <div className="chat-container">

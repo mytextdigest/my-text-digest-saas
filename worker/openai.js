@@ -1,33 +1,8 @@
-import OpenAI from "openai";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
-
-export async function getOpenAIForDocument(docId) {
-  const doc = await prisma.document.findUnique({
-    where: { id: docId },
-    select: {
-      userId: true,
-      user: {
-        select: {
-          settings: {
-            where: { key: "openai_api_key" },
-            select: { value: true },
-            take: 1,
-          },
-        },
-      },
-    },
-  });
-
-  if (!doc?.user?.settings?.[0]?.value) {
-    throw new Error("OPENAI_KEY_MISSING");
-  }
-
-  return new OpenAI({
-    apiKey: doc.user.settings[0].value,
-    // Fail fast into the job's watchdog/retry path instead of hanging the
-    // single-threaded worker loop on a stalled request.
-    timeout: 120 * 1000,
-  });
-}
+// worker/openai.js
+// Re-exports the shared implementation from src/lib/openaiForDocument.js —
+// moved there so a Next.js API route (generate-slide-image) can import it
+// too without reaching several directories up into worker/. Kept as a
+// re-export here so every existing `from "./openai.js"` import in this
+// directory (processFigures.js, processSlideOutline.js, ...) keeps working
+// unchanged.
+export { getOpenAIForDocument } from "../src/lib/openaiForDocument.js";

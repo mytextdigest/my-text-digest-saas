@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { prisma } from "@/lib/prisma";
 import { generateSignedUrl } from "@/lib/s3SignedUrl";
 import { computeDocumentEmbedding, adjustTopicOnDocumentRemoval } from "@/lib/topicUtils";
@@ -78,6 +78,8 @@ export async function DELETE(req, { params }) {
     include: {
       topicDocument: { include: { topic: true } },
       figures: { select: { s3Key: true } },
+      slideDecks: { select: { id: true, s3Key: true } },
+      slideImages: { select: { s3Key: true } },
     },
   });
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -107,6 +109,36 @@ export async function DELETE(req, { params }) {
     )
   );
 
+  // Same best-effort posture for every SlideDeck's rendered .pptx + its own
+  // hero-image prefix (slides/<deckId>/), and every document-scoped
+  // SlideImage (the Uploads panel's upload/generate pool) — outside the
+  // transaction below, same as the figures cleanup above.
+  await Promise.all(
+    doc.slideDecks.map(async (deck) => {
+      try {
+        if (deck.s3Key) {
+          await s3Client.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: deck.s3Key }));
+        }
+        const prefix = `slides/${deck.id}/`;
+        const listed = await s3Client.send(new ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: prefix }));
+        await Promise.all(
+          (listed.Contents || []).map((obj) =>
+            s3Client.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: obj.Key }))
+          )
+        );
+      } catch (err) {
+        console.error(`⚠️  Failed to delete slide deck S3 objects (deck ${deck.id}):`, err.message);
+      }
+    })
+  );
+  await Promise.all(
+    doc.slideImages.map((image) =>
+      s3Client
+        .send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: image.s3Key }))
+        .catch((err) => console.error(`⚠️  Failed to delete slide image S3 object (${image.s3Key}):`, err.message))
+    )
+  );
+
   // Delete document and its relations. Figures must be removed before
   // chunks — Figure.chunkId references Chunk, so deleting chunks first
   // would leave a dangling FK.
@@ -115,6 +147,8 @@ export async function DELETE(req, { params }) {
     await tx.conversation.deleteMany({ where: { documentId: id } });
     await tx.figure.deleteMany({ where: { documentId: id } });
     await tx.chunk.deleteMany({ where: { documentId: id } });
+    await tx.slideDeck.deleteMany({ where: { documentId: id } });
+    await tx.slideImage.deleteMany({ where: { documentId: id } });
     await tx.document.delete({ where: { id } });
   });
 

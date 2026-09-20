@@ -13,6 +13,9 @@ import { createStructuredSummary, summarizeChunks } from "./summarize.js";
 import { getOpenAIForDocument } from "./openai.js";
 import { processClusterJobWorker } from "./cluster.js";
 import { processFigureJob } from "./processFigures.js";
+import { processSlideOutlineJob } from "./processSlideOutline.js";
+import { processSlideBuildJob } from "./processSlideBuild.js";
+import { processSlideEditJob } from "./processSlideEdit.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -636,6 +639,9 @@ async function processJob(job) {
   if (job.type === "summarize") return processSummarizationJob(job);
   if (job.type === "cluster")  return processClusterJobWorker(job.docId, job.projectId, job.recluster ?? false);
   if (job.type === "figures")  return processFigureJob(job);
+  if (job.type === "slide-outline") return processSlideOutlineJob(job);
+  if (job.type === "slide-build")   return processSlideBuildJob(job);
+  if (job.type === "slide-edit")    return processSlideEditJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }
@@ -700,7 +706,42 @@ async function mainLoop() {
 // catches every internal error itself and never throws, so only a watchdog
 // timeout would reach this catch — and figure captioning failures must
 // never flip a document the user can already chat with into "failed".
+//
+// slide-outline/slide-build/slide-edit are keyed by `deckId`, not `docId` —
+// each already catches every internal error itself and never throws, so
+// only a watchdog timeout reaches this catch for any of the three. Unlike
+// cluster/figures (non-blocking subsystems with no user-facing status of
+// their own), a stuck "generating" SlideDeck has no other path back to a
+// resolved state, so a timeout here still needs to update SlideDeck.status
+// — just on the deck row, not the document, and per decision 11,
+// slide-edit reverts to "ready" (never "error") even on a timeout, exactly
+// like its own internal catch block already does.
 async function recordJobFailure(body, err) {
+  if (body?.type === "slide-outline" || body?.type === "slide-build") {
+    if (!body.deckId) return;
+    try {
+      await prisma.slideDeck.update({
+        where: { id: body.deckId },
+        data: { status: "error", errorMessage: String(err?.message || err).slice(0, 2000) },
+      });
+    } catch (updateErr) {
+      console.error("❌ Failed to record slide job failure on deck:", updateErr.message);
+    }
+    return;
+  }
+  if (body?.type === "slide-edit") {
+    if (!body.deckId) return;
+    try {
+      await prisma.slideDeck.update({
+        where: { id: body.deckId },
+        data: { status: "ready", errorMessage: String(err?.message || err).slice(0, 2000) },
+      });
+    } catch (updateErr) {
+      console.error("❌ Failed to revert slide-edit status on timeout:", updateErr.message);
+    }
+    return;
+  }
+
   const docId = body?.docId;
   if (!docId || body.type === "cluster" || body.type === "figures") return;
 
