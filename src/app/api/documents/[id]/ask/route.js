@@ -13,6 +13,7 @@ import {
   GENERAL_KNOWLEDGE_TOOL,
   stashPendingToolCall,
 } from "@/lib/generalKnowledgeTool";
+import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -289,6 +290,12 @@ the comparison, noting briefly that it comes from general knowledge and may not 
 current. Do NOT refuse or redirect the user to look it up themselves once the tool has
 already supplied an answer.
 
+If the question is about how a specific person, organization, or other named entity is
+connected or related to something else (e.g. "How is X connected to Y?", "Who does X work
+for?", "What did X acquire?"), call the query_knowledge_graph tool with that entity's name
+instead of relying solely on the document context below — the connecting facts may live in
+a different part of the document than what was retrieved.
+
 You must use only the factual information contained in the provided document context.
 
 You may:
@@ -339,7 +346,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
           messages: [systemMsg, ...memoryMsgs, userMsgGPT],
           temperature: 0.2,
           max_tokens: 700,
-          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
           tool_choice: "auto"
         },
         {
@@ -387,10 +394,65 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
     }
 
     // ----------------------------
+    // 12.4) KNOWLEDGE-GRAPH TOOL CALL — unlike general knowledge, this only
+    // surfaces the document's own already-extracted data, so it runs inline
+    // with no confirmation gate: look up the entity, feed the plain-text
+    // result back as a tool message, then make one more completion call
+    // (no tools) for the final answer.
+    // ----------------------------
+    const toolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall?.function?.name === "query_knowledge_graph") {
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+
+      const kgResult = await runKnowledgeGraphQuery({
+        prisma,
+        entity: args.entity || "",
+        maxHops: args.maxHops,
+        documentId,
+        projectId: undefined,
+      });
+
+      activeRequests.set(requestId, controller);
+      let followUp;
+      try {
+        followUp = await openai.chat.completions.create(
+          {
+            model: "gpt-4o-mini",
+            messages: [
+              systemMsg,
+              ...memoryMsgs,
+              userMsgGPT,
+              completion.choices[0].message,
+              { role: "tool", tool_call_id: toolCall.id, content: kgResult },
+            ],
+            temperature: 0.2,
+            max_tokens: 700,
+          },
+          { signal: controller.signal }
+        );
+      } finally {
+        activeRequests.delete(requestId);
+      }
+
+      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+
+      await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
+      await prisma.message.create({
+        data: { conversationId, role: "assistant", content: kgAnswerText, status: "done" },
+      });
+
+      return NextResponse.json({ success: true, conversationId, answer: kgAnswerText });
+    }
+
+    // ----------------------------
     // 12.5) GENERAL-KNOWLEDGE TOOL CALL — never run silently; stash and ask
     // the user for confirmation instead of answering directly.
     // ----------------------------
-    const toolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
     if (toolCall?.function?.name === "consult_general_knowledge") {
       let query = "";
       try {

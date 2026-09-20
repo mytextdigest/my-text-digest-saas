@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
+import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -110,6 +111,14 @@ export async function DELETE(req, { params }) {
       const docIds = docs.map((d) => d.id);
 
       if (docIds.length > 0) {
+        // Knowledge-graph data (entities/mentions/relationships/insights) is
+        // project-scoped, not cascaded by any FK — clean it up per-document
+        // before chunks are deleted below (EntityMention.chunkId references
+        // Chunk with a RESTRICT FK).
+        for (const docId of docIds) {
+          await removeGraphDataForDocument(prismaTx, docId, { projectId });
+        }
+
         // 2) document conversations for those documents
         const docConvos = await prismaTx.conversation.findMany({
           where: { documentId: { in: docIds } },

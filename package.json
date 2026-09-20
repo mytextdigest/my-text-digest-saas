@@ -9,11 +9,11 @@
   "description": "My Text Digest — SaaS for document summarization and Q&A",
   "scripts": {
     "dev": "next dev",
+    "dev:worker": "node scripts/dev-worker.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate",
-    "dev:worker": "node scripts/dev-worker.mjs"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -28,8 +28,10 @@
     "@prisma/client": "^6.18.0",
     "@resvg/resvg-wasm": "^2.6.2",
     "@smithy/node-http-handler": "^4.4.5",
+    "@xyflow/react": "^12.11.6",
     "bcrypt": "^6.0.0",
     "clsx": "^2.1.1",
+    "d3-force": "^3.0.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.2",
     "framer-motion": "^12.23.19",

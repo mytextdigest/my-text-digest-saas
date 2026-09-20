@@ -13,6 +13,7 @@ import { createStructuredSummary, summarizeChunks } from "./summarize.js";
 import { getOpenAIForDocument } from "./openai.js";
 import { processClusterJobWorker } from "./cluster.js";
 import { processFigureJob } from "./processFigures.js";
+import { processGraphJob, processGraphBatchJob } from "./processGraph.js";
 import { processSlideOutlineJob } from "./processSlideOutline.js";
 import { processSlideBuildJob } from "./processSlideBuild.js";
 import { processSlideEditJob } from "./processSlideEdit.js";
@@ -639,6 +640,8 @@ async function processJob(job) {
   if (job.type === "summarize") return processSummarizationJob(job);
   if (job.type === "cluster")  return processClusterJobWorker(job.docId, job.projectId, job.recluster ?? false);
   if (job.type === "figures")  return processFigureJob(job);
+  if (job.type === "graph")       return processGraphJob(job);
+  if (job.type === "graph-batch") return processGraphBatchJob(job);
   if (job.type === "slide-outline") return processSlideOutlineJob(job);
   if (job.type === "slide-build")   return processSlideBuildJob(job);
   if (job.type === "slide-edit")    return processSlideEditJob(job);
@@ -706,6 +709,11 @@ async function mainLoop() {
 // catches every internal error itself and never throws, so only a watchdog
 // timeout would reach this catch — and figure captioning failures must
 // never flip a document the user can already chat with into "failed".
+// Graph/graph-batch jobs are excluded for the same reason again: they're
+// manually-triggered (never fired at upload time) and already catch every
+// internal error onto their own GraphExtractionLog.status — a graph failure
+// must never flip Document.status, which the user's already-working chat
+// depends on.
 //
 // slide-outline/slide-build/slide-edit are keyed by `deckId`, not `docId` —
 // each already catches every internal error itself and never throws, so
@@ -743,7 +751,7 @@ async function recordJobFailure(body, err) {
   }
 
   const docId = body?.docId;
-  if (!docId || body.type === "cluster" || body.type === "figures") return;
+  if (!docId || body.type === "cluster" || body.type === "figures" || body.type === "graph" || body.type === "graph-batch") return;
 
   const data = {
     lastError: String(err?.message || err).slice(0, 2000),

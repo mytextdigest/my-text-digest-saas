@@ -10,6 +10,7 @@ import {
   GENERAL_KNOWLEDGE_TOOL,
   stashPendingToolCall,
 } from "@/lib/generalKnowledgeTool";
+import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -320,6 +321,12 @@ that content IS authorized outside information for this answer — use it direct
 briefly that it comes from general knowledge and may not be fully current. Do NOT refuse
 or redirect the user to look it up themselves once the tool has already supplied an answer.
 
+If the question is about how a specific person, organization, or other named entity is
+connected or related to something else (e.g. "How is X connected to Y?", "Who does X work
+for?", "What did X acquire?"), call the query_knowledge_graph tool with that entity's name
+instead of relying solely on the text below — the connecting facts may live in a different
+part of the project than what was retrieved.
+
 Use ONLY the provided text. Do not invent facts.
 BM25 retrieval has selected the most relevant chunks.
         `.trim() + chartNote,
@@ -350,7 +357,7 @@ BM25 retrieval has selected the most relevant chunks.
           messages,
           temperature: 0.3,
           max_tokens: 800,
-          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
           tool_choice: "auto"
         },
         {
@@ -359,6 +366,42 @@ BM25 retrieval has selected the most relevant chunks.
       );
 
       const bm25ToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+      if (bm25ToolCall?.function?.name === "query_knowledge_graph") {
+        let args = {};
+        try {
+          args = JSON.parse(bm25ToolCall.function.arguments || "{}");
+        } catch {
+          args = {};
+        }
+
+        const kgResult = await runKnowledgeGraphQuery({
+          prisma,
+          entity: args.entity || "",
+          maxHops: args.maxHops,
+          documentId: undefined,
+          projectId,
+        });
+
+        const followUp = await openai.chat.completions.create(
+          {
+            model: "gpt-4o-mini",
+            messages: [...messages, completion.choices[0].message, { role: "tool", tool_call_id: bm25ToolCall.id, content: kgResult }],
+            temperature: 0.3,
+            max_tokens: 800,
+          },
+          { signal: controller.signal }
+        );
+
+        const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+
+        await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+        await prisma.projectMessage.create({
+          data: { conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done" },
+        });
+
+        return NextResponse.json({ success: true, answer: kgAnswerText });
+      }
+
       if (bm25ToolCall?.function?.name === "consult_general_knowledge") {
         let toolQuery = "";
         try {
@@ -533,6 +576,12 @@ that content IS authorized outside information for this answer — use it direct
 briefly that it comes from general knowledge and may not be fully current. Do NOT refuse
 or redirect the user to look it up themselves once the tool has already supplied an answer.
 
+If the question is about how a specific person, organization, or other named entity is
+connected or related to something else (e.g. "How is X connected to Y?", "Who does X work
+for?", "What did X acquire?"), call the query_knowledge_graph tool with that entity's name
+instead of relying solely on the documents below — the connecting facts may live in a
+different document than what was retrieved.
+
 You may:
 - Summarize document content
 - Explain document content
@@ -571,7 +620,7 @@ Response format:
           messages: [systemMsg, ...memoryMsgs, userMsgForModel],
           temperature: 0.3,
           max_tokens: 800,
-          tools: [GENERAL_KNOWLEDGE_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
           tool_choice: "auto",
         },
         { signal: controller.signal }
@@ -587,6 +636,48 @@ Response format:
     }
 
     const mainToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+    if (mainToolCall?.function?.name === "query_knowledge_graph") {
+      let args = {};
+      try {
+        args = JSON.parse(mainToolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+
+      const kgResult = await runKnowledgeGraphQuery({
+        prisma,
+        entity: args.entity || "",
+        maxHops: args.maxHops,
+        documentId: undefined,
+        projectId,
+      });
+
+      const followUp = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [
+            systemMsg,
+            ...memoryMsgs,
+            userMsgForModel,
+            completion.choices[0].message,
+            { role: "tool", tool_call_id: mainToolCall.id, content: kgResult },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        },
+        { signal: controller.signal }
+      );
+
+      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+
+      await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+      await prisma.projectMessage.create({
+        data: { conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done" },
+      });
+
+      return NextResponse.json({ success: true, answer: kgAnswerText });
+    }
+
     if (mainToolCall?.function?.name === "consult_general_knowledge") {
       let toolQuery = "";
       try {

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2 } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -11,6 +11,7 @@ import MessageActions from './MessageActions';
 import ExpandedMessageModal from './ExpandedMessageModal';
 import ChartMessage from './ChartMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
+import ProjectGraphView from '@/components/graph/ProjectGraphView';
 import { useChatEngine } from './useChatEngine';
 import {
   GeneralKnowledgePermissionPrompt,
@@ -45,6 +46,7 @@ const renderMessageContent = (content, citations, onCitationClick) => {
 };
 
 const ChatInterface = ({ className, projectId }) => {
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph'
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isClient, setIsClient] = useState(false);
@@ -279,6 +281,38 @@ const ChatInterface = ({ className, projectId }) => {
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mt-4">
+          <Button
+            variant={activeTab === 'chat' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('chat')}
+            className={cn(
+              "flex items-center space-x-2",
+              activeTab === 'chat'
+                ? "text-white dark:text-gray-200"
+                : "text-gray-600 dark:text-gray-400"
+            )}
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span>Chat</span>
+          </Button>
+          <Button
+            variant={activeTab === 'graph' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('graph')}
+            className={cn(
+              "flex items-center space-x-2",
+              activeTab === 'graph'
+                ? "text-white dark:text-gray-200"
+                : "text-gray-600 dark:text-gray-400"
+            )}
+          >
+            <Network className="h-4 w-4" />
+            <span>Graph</span>
+          </Button>
+        </div>
+
         {/* Left Side - Title and Subtitle */}
         {/* <div className="flex items-center space-x-3">
           <div className="relative">
@@ -316,6 +350,12 @@ const ChatInterface = ({ className, projectId }) => {
       </CardHeader>
 
       <CardContent className="chat-card-content p-0">
+        {activeTab === 'graph' ? (
+          <div className="relative w-full h-full">
+            <ProjectGraphView projectId={projectId} />
+          </div>
+        ) : (
+          <>
         {/* Messages Area */}
         <div className="chat-messages-area chat-scrollbar relative">
           {messages.length === 0 ? (
@@ -508,6 +548,8 @@ const ChatInterface = ({ className, projectId }) => {
 
           </div>
         </form>
+          </>
+        )}
       </CardContent>
 
       {/* Delete Confirmation Modal */}
