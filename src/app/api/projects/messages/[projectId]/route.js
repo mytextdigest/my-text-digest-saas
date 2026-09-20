@@ -41,6 +41,7 @@ export async function GET(req, { params }) {
       chart: m.chartData || null,
       citations: m.citations || null,
       externalKnowledgeQuery: m.externalKnowledgeQuery || null,
+      comparisonId: m.comparisonId || null,
     }));
 
     return NextResponse.json({ success: true, messages: mapped });

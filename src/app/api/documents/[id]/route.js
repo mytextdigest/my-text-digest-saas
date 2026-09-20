@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { generateSignedUrl } from "@/lib/s3SignedUrl";
 import { computeDocumentEmbedding, adjustTopicOnDocumentRemoval } from "@/lib/topicUtils";
 import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
+import { removeComparisonsForDocument } from "@/lib/compareCleanup";
 import s3Client from "@/lib/s3.mjs";
 
 export async function GET(req, { params }) {
@@ -140,14 +141,16 @@ export async function DELETE(req, { params }) {
     )
   );
 
-  // Delete document and its relations. Figures and graph data must be
-  // removed before chunks — Figure.chunkId/EntityMention.chunkId reference
-  // Chunk, so deleting chunks first would leave a dangling FK.
+  // Delete document and its relations. Figures, graph data, and comparisons
+  // must be removed before chunks — Figure.chunkId/EntityMention.chunkId/
+  // ComparisonFinding.documentAChunkId|documentBChunkId reference Chunk, so
+  // deleting chunks first would leave a dangling FK.
   await prisma.$transaction(async (tx) => {
     await tx.message.deleteMany({ where: { conversation: { documentId: id } } });
     await tx.conversation.deleteMany({ where: { documentId: id } });
     await tx.figure.deleteMany({ where: { documentId: id } });
     await removeGraphDataForDocument(tx, id, { projectId: doc.projectId });
+    await removeComparisonsForDocument(tx, id);
     await tx.chunk.deleteMany({ where: { documentId: id } });
     await tx.slideDeck.deleteMany({ where: { documentId: id } });
     await tx.slideImage.deleteMany({ where: { documentId: id } });

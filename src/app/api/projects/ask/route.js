@@ -11,6 +11,7 @@ import {
   stashPendingToolCall,
 } from "@/lib/generalKnowledgeTool";
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
+import { COMPARE_DOCUMENTS_TOOL, runCompareDocumentsTool } from "@/lib/compareQueryTool";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -327,6 +328,10 @@ for?", "What did X acquire?"), call the query_knowledge_graph tool with that ent
 instead of relying solely on the text below — the connecting facts may live in a different
 part of the project than what was retrieved.
 
+If the question asks how two specific documents differ or compare, or to compare/diff two
+documents by name, call the compare_documents tool with both document names instead of
+guessing from the text below.
+
 Use ONLY the provided text. Do not invent facts.
 BM25 retrieval has selected the most relevant chunks.
         `.trim() + chartNote,
@@ -357,7 +362,7 @@ BM25 retrieval has selected the most relevant chunks.
           messages,
           temperature: 0.3,
           max_tokens: 800,
-          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL, COMPARE_DOCUMENTS_TOOL],
           tool_choice: "auto"
         },
         {
@@ -366,6 +371,48 @@ BM25 retrieval has selected the most relevant chunks.
       );
 
       const bm25ToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+      if (bm25ToolCall?.function?.name === "compare_documents") {
+        let args = {};
+        try {
+          args = JSON.parse(bm25ToolCall.function.arguments || "{}");
+        } catch {
+          args = {};
+        }
+
+        const compareResult = await runCompareDocumentsTool({
+          prisma,
+          projectId,
+          documentA: args.document_a || "",
+          documentB: args.document_b || "",
+        });
+        const toolResultContent = compareResult.error || compareResult.resultText;
+
+        const followUp = await openai.chat.completions.create(
+          {
+            model: "gpt-4o-mini",
+            messages: [...messages, completion.choices[0].message, { role: "tool", tool_call_id: bm25ToolCall.id, content: toolResultContent }],
+            temperature: 0.3,
+            max_tokens: 800,
+          },
+          { signal: controller.signal }
+        );
+
+        const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+
+        await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+        await prisma.projectMessage.create({
+          data: {
+            conversationId: conv.id,
+            role: "assistant",
+            content: compareAnswerText,
+            status: "done",
+            comparisonId: compareResult.comparisonId || null,
+          },
+        });
+
+        return NextResponse.json({ success: true, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
+      }
+
       if (bm25ToolCall?.function?.name === "query_knowledge_graph") {
         let args = {};
         try {
@@ -582,6 +629,10 @@ for?", "What did X acquire?"), call the query_knowledge_graph tool with that ent
 instead of relying solely on the documents below — the connecting facts may live in a
 different document than what was retrieved.
 
+If the question asks how two specific documents differ or compare, or to compare/diff two
+documents by name, call the compare_documents tool with both document names instead of
+guessing from the documents below.
+
 You may:
 - Summarize document content
 - Explain document content
@@ -620,7 +671,7 @@ Response format:
           messages: [systemMsg, ...memoryMsgs, userMsgForModel],
           temperature: 0.3,
           max_tokens: 800,
-          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL, COMPARE_DOCUMENTS_TOOL],
           tool_choice: "auto",
         },
         { signal: controller.signal }
@@ -636,6 +687,54 @@ Response format:
     }
 
     const mainToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+    if (mainToolCall?.function?.name === "compare_documents") {
+      let args = {};
+      try {
+        args = JSON.parse(mainToolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+
+      const compareResult = await runCompareDocumentsTool({
+        prisma,
+        projectId,
+        documentA: args.document_a || "",
+        documentB: args.document_b || "",
+      });
+      const toolResultContent = compareResult.error || compareResult.resultText;
+
+      const followUp = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [
+            systemMsg,
+            ...memoryMsgs,
+            userMsgForModel,
+            completion.choices[0].message,
+            { role: "tool", tool_call_id: mainToolCall.id, content: toolResultContent },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        },
+        { signal: controller.signal }
+      );
+
+      const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+
+      await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+      await prisma.projectMessage.create({
+        data: {
+          conversationId: conv.id,
+          role: "assistant",
+          content: compareAnswerText,
+          status: "done",
+          comparisonId: compareResult.comparisonId || null,
+        },
+      });
+
+      return NextResponse.json({ success: true, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
+    }
+
     if (mainToolCall?.function?.name === "query_knowledge_graph") {
       let args = {};
       try {

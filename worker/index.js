@@ -17,6 +17,7 @@ import { processGraphJob, processGraphBatchJob } from "./processGraph.js";
 import { processSlideOutlineJob } from "./processSlideOutline.js";
 import { processSlideBuildJob } from "./processSlideBuild.js";
 import { processSlideEditJob } from "./processSlideEdit.js";
+import { processCompareJob } from "./compareWorker.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -645,6 +646,7 @@ async function processJob(job) {
   if (job.type === "slide-outline") return processSlideOutlineJob(job);
   if (job.type === "slide-build")   return processSlideBuildJob(job);
   if (job.type === "slide-edit")    return processSlideEditJob(job);
+  if (job.type === "compare")       return processCompareJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }
@@ -724,6 +726,14 @@ async function mainLoop() {
 // — just on the deck row, not the document, and per decision 11,
 // slide-edit reverts to "ready" (never "error") even on a timeout, exactly
 // like its own internal catch block already does.
+//
+// "compare" is excluded for the same reason as cluster/figures/graph: it
+// intentionally has no `docId` at all (it spans two documents, not one) —
+// recordJobFailure would throw trying to update a non-existent document
+// with this job's payload shape if not excluded — and processCompareJob
+// already catches every internal error onto DocumentComparison.status/
+// errorMessage itself, which is the correct user-facing state for this
+// feature independent of recordJobFailure.
 async function recordJobFailure(body, err) {
   if (body?.type === "slide-outline" || body?.type === "slide-build") {
     if (!body.deckId) return;
@@ -751,7 +761,7 @@ async function recordJobFailure(body, err) {
   }
 
   const docId = body?.docId;
-  if (!docId || body.type === "cluster" || body.type === "figures" || body.type === "graph" || body.type === "graph-batch") return;
+  if (!docId || body.type === "cluster" || body.type === "figures" || body.type === "graph" || body.type === "graph-batch" || body.type === "compare") return;
 
   const data = {
     lastError: String(err?.message || err).slice(0, 2000),

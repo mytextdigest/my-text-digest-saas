@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
+import { removeComparisonsForDocument } from "@/lib/compareCleanup";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -117,6 +118,10 @@ export async function DELETE(req, { params }) {
         // Chunk with a RESTRICT FK).
         for (const docId of docIds) {
           await removeGraphDataForDocument(prismaTx, docId, { projectId });
+          // Belt-and-suspenders pass — the document delete route already
+          // does this per-document, but a project delete goes straight to
+          // deleteMany on documents below, bypassing that route entirely.
+          await removeComparisonsForDocument(prismaTx, docId);
         }
 
         // 2) document conversations for those documents

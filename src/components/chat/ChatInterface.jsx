@@ -1,7 +1,8 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network, GitCompare } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -12,6 +13,7 @@ import ExpandedMessageModal from './ExpandedMessageModal';
 import ChartMessage from './ChartMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
 import ProjectGraphView from '@/components/graph/ProjectGraphView';
+import ComparisonsView from '@/components/documents/ComparisonsView';
 import { useChatEngine } from './useChatEngine';
 import {
   GeneralKnowledgePermissionPrompt,
@@ -46,7 +48,8 @@ const renderMessageContent = (content, citations, onCitationClick) => {
 };
 
 const ChatInterface = ({ className, projectId }) => {
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph'
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph' | 'comparisons'
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isClient, setIsClient] = useState(false);
@@ -90,7 +93,8 @@ const ChatInterface = ({ className, projectId }) => {
               timestamp: new Date(m.timestamp),
               chart: m.chart || null,
               citations: m.citations || null,
-              externalKnowledgeQuery: m.externalKnowledgeQuery || null
+              externalKnowledgeQuery: m.externalKnowledgeQuery || null,
+              comparisonId: m.comparisonId || null
             }))
           );
         }
@@ -119,7 +123,8 @@ const ChatInterface = ({ className, projectId }) => {
         timestamp: new Date(),
         chart: res.chart || null,
         citations: res.citations || null,
-        externalKnowledgeQuery: res.externalKnowledgeQuery || null
+        externalKnowledgeQuery: res.externalKnowledgeQuery || null,
+        comparisonId: res.comparisonId || null
       }
     ]);
   }, []);
@@ -311,6 +316,20 @@ const ChatInterface = ({ className, projectId }) => {
             <Network className="h-4 w-4" />
             <span>Graph</span>
           </Button>
+          <Button
+            variant={activeTab === 'comparisons' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('comparisons')}
+            className={cn(
+              "flex items-center space-x-2",
+              activeTab === 'comparisons'
+                ? "text-white dark:text-gray-200"
+                : "text-gray-600 dark:text-gray-400"
+            )}
+          >
+            <GitCompare className="h-4 w-4" />
+            <span>Comparisons</span>
+          </Button>
         </div>
 
         {/* Left Side - Title and Subtitle */}
@@ -353,6 +372,10 @@ const ChatInterface = ({ className, projectId }) => {
         {activeTab === 'graph' ? (
           <div className="relative w-full h-full">
             <ProjectGraphView projectId={projectId} />
+          </div>
+        ) : activeTab === 'comparisons' ? (
+          <div className="relative w-full h-full overflow-y-auto">
+            <ComparisonsView projectId={projectId} />
           </div>
         ) : (
           <>
@@ -429,6 +452,17 @@ const ChatInterface = ({ className, projectId }) => {
 
                       {message.type === 'assistant' && (
                         <ExternalKnowledgeBadge query={message.externalKnowledgeQuery} />
+                      )}
+
+                      {message.type === 'assistant' && message.comparisonId && (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/compare?id=${message.comparisonId}`)}
+                          className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+                        >
+                          <GitCompare className="h-3.5 w-3.5" />
+                          View full comparison
+                        </button>
                       )}
 
                     </div>

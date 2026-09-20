@@ -58,6 +58,7 @@ model Project {
   entities      Entity[]
   relationships Relationship[]
   graphInsights GraphInsight[]
+  comparisons   DocumentComparison[]
 
   @@unique([userId, name])
 }
@@ -93,6 +94,8 @@ model Document {
   relationships      Relationship[]
   graphExtractionLog GraphExtractionLog?
   graphInsights      GraphInsight[]
+  comparisonsAsA     DocumentComparison[] @relation("ComparisonsAsA")
+  comparisonsAsB     DocumentComparison[] @relation("ComparisonsAsB")
 }
 
 model Chunk {
@@ -107,6 +110,8 @@ model Chunk {
   figures        Figure[]
   entityMentions EntityMention[]
   relationships  Relationship[]
+  findingsAsA    ComparisonFinding[] @relation("FindingChunkA")
+  findingsAsB    ComparisonFinding[] @relation("FindingChunkB")
 }
 
 model Figure {
@@ -206,6 +211,7 @@ model ProjectMessage {
   chartData              Json?               @map("chart_data")
   citations              Json?               @map("citations")
   externalKnowledgeQuery String?             @map("external_knowledge_query")
+  comparisonId           String?             @map("comparison_id")
   conversation           ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -387,4 +393,49 @@ model GraphInsight {
 
   @@index([documentId])
   @@index([projectId])
+}
+
+// Document Comparison
+
+model DocumentComparison {
+  id                 String    @id @default(cuid())
+  projectId          String    @map("project_id")
+  documentAId        String    @map("document_a_id")
+  documentBId        String    @map("document_b_id")
+  status             String    @default("generating") // "generating" | "ready" | "error"
+  summaryJson        Json?     @map("summary_json") // [{title,explanation,category,findingIds}]
+  errorMessage       String?   @map("error_message")
+  insightCompact     Json?     @map("insight_compact") // {sections:[...]}
+  insightDescriptive Json?     @map("insight_descriptive") // {sections:[...]}, lazy
+  createdAt          DateTime  @default(now()) @map("created_at")
+  completedAt        DateTime? @map("completed_at")
+
+  project   Project             @relation(fields: [projectId], references: [id])
+  documentA Document            @relation("ComparisonsAsA", fields: [documentAId], references: [id])
+  documentB Document            @relation("ComparisonsAsB", fields: [documentBId], references: [id])
+  findings  ComparisonFinding[]
+
+  @@index([projectId])
+  @@index([documentAId, documentBId])
+}
+
+model ComparisonFinding {
+  id               String   @id @default(cuid())
+  comparisonId     String   @map("comparison_id")
+  category         String // "same" | "changed" | "added" | "removed"
+  sectionLabel     String?  @map("section_label")
+  documentAChunkId String?  @map("document_a_chunk_id") // null for "added"
+  documentAExcerpt String?  @map("document_a_excerpt") // chunk text, truncated to 800 chars
+  documentBChunkId String?  @map("document_b_chunk_id") // null for "removed"
+  documentBExcerpt String?  @map("document_b_excerpt")
+  explanation      String?
+  similarity       Float? // null for added/removed
+  sortOrder        Int      @default(0) @map("sort_order") // similarity-ascending, unmatched-first
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  comparison     DocumentComparison @relation(fields: [comparisonId], references: [id])
+  documentAChunk Chunk?             @relation("FindingChunkA", fields: [documentAChunkId], references: [id])
+  documentBChunk Chunk?             @relation("FindingChunkB", fields: [documentBChunkId], references: [id])
+
+  @@index([comparisonId])
 }
