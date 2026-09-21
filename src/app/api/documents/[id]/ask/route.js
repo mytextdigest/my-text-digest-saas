@@ -15,6 +15,7 @@ import {
 } from "@/lib/generalKnowledgeTool";
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
+import { stripMarkdownArtifacts } from "@/lib/textFormat";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -255,10 +256,9 @@ export async function POST(req, { params }) {
     // ----------------------------
     const wantsChart = detectChartIntent(question);
     let chartSpec = null;
+    let chartExtraData = null;
 
     if (wantsChart) {
-      let extraData = null;
-
       const spreadsheetExts = ["xlsx", "xls", "csv"];
       const docExtForChart = doc.filename?.split(".").pop()?.toLowerCase();
       if (spreadsheetExts.includes(docExtForChart) && doc.filePath) {
@@ -268,7 +268,7 @@ export async function POST(req, { params }) {
           );
           const buffer = await streamToBuffer(object.Body);
           const sheets = parseWorkbook(buffer, doc.filename);
-          extraData = sheets.map((s) => ({
+          chartExtraData = sheets.map((s) => ({
             sheet: s.name,
             headers: s.headers,
             rows: s.rows.slice(0, 200),
@@ -282,7 +282,7 @@ export async function POST(req, { params }) {
         openai,
         question,
         contextText,
-        extraData,
+        extraData: chartExtraData,
         signal: controller.signal,
       });
     }
@@ -291,7 +291,7 @@ export async function POST(req, { params }) {
       ? ""
       : chartSpec
       ? `\nA ${chartSpec.type} chart has been generated from the document data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
-      : `\nA chart could not be generated from the available document data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+      : `\nA chart could not be generated from the available data alone. If you end up calling consult_general_knowledge for this question, do not say anything about chart availability — it will be handled separately. Otherwise, briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
 
     // ----------------------------
     // 11) SHORT-TERM MEMORY (LAST 6 MESSAGES)
@@ -479,7 +479,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         activeRequests.delete(requestId);
       }
 
-      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+      const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
 
       await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
       await prisma.message.create({
@@ -510,6 +510,10 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         toolCall,
         query,
         chartSpec,
+        wantsChart,
+        question,
+        contextText,
+        chartExtraData,
         ownerUserEmail: session.user.email,
         apiKeyUserId: userId,
         completionOptions: { model: "gpt-4o-mini", temperature: 0.2, max_tokens: 700 }
@@ -524,8 +528,9 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       });
     }
 
-    const assistantText =
-      (completion?.choices?.[0]?.message?.content || "").trim();
+    const assistantText = stripMarkdownArtifacts(
+      (completion?.choices?.[0]?.message?.content || "").trim()
+    );
 
     // ----------------------------
     // 13) SAVE ASSISTANT MESSAGE

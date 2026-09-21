@@ -13,6 +13,7 @@ import {
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { COMPARE_DOCUMENTS_TOOL, runCompareDocumentsTool } from "@/lib/compareQueryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
+import { stripMarkdownArtifacts } from "@/lib/textFormat";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -299,7 +300,7 @@ export async function POST(req) {
         ? ""
         : chartSpec
         ? `\nA ${chartSpec.type} chart has been generated from the project data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
-        : `\nA chart could not be generated from the available project data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+        : `\nA chart could not be generated from the available data alone. If you end up calling consult_general_knowledge for this question, do not say anything about chart availability — it will be handled separately. Otherwise, briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
 
       const systemMsg = {
         role: "system",
@@ -398,7 +399,7 @@ BM25 retrieval has selected the most relevant chunks.
           { signal: controller.signal }
         );
 
-        const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+        const compareAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
 
         await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
         await prisma.projectMessage.create({
@@ -440,7 +441,7 @@ BM25 retrieval has selected the most relevant chunks.
           { signal: controller.signal }
         );
 
-        const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+        const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
 
         await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
         await prisma.projectMessage.create({
@@ -467,6 +468,10 @@ BM25 retrieval has selected the most relevant chunks.
           toolCall: bm25ToolCall,
           query: toolQuery,
           chartSpec,
+          wantsChart,
+          question,
+          contextText: contextBlocks,
+          chartExtraData: topicsExtraData,
           ownerUserEmail: session.user.email,
           apiKeyUserId: session.user.id,
           allChunksForCitations: allChunks,
@@ -481,7 +486,7 @@ BM25 retrieval has selected the most relevant chunks.
         });
       }
 
-      const assistantText = completion?.choices?.[0]?.message?.content?.trim() || "";
+      const assistantText = stripMarkdownArtifacts(completion?.choices?.[0]?.message?.content?.trim() || "");
 
       // Store user & assistant messages
       await prisma.projectMessage.update({
@@ -626,7 +631,7 @@ BM25 retrieval has selected the most relevant chunks.
       ? ""
       : chartSpec
       ? `\nA ${chartSpec.type} chart has been generated from the project data and will be displayed to the user right below your answer. Do NOT say you are unable to create charts or visuals, and do not claim you can only provide text — instead briefly acknowledge the chart is shown below, and still give a concise text summary of the data.`
-      : `\nA chart could not be generated from the available project data for this request. Briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
+      : `\nA chart could not be generated from the available data alone. If you end up calling consult_general_knowledge for this question, do not say anything about chart availability — it will be handled separately. Otherwise, briefly let the user know a visual isn't available this time, then answer with the information in text form.`;
 
     // 11) Short-term memory: previous messages (createdAt < userMsg.createdAt)
     const prevMsgs = await prisma.projectMessage.findMany({
@@ -753,7 +758,7 @@ Response format:
         { signal: controller.signal }
       );
 
-      const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+      const compareAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
       await prisma.projectMessage.create({
@@ -801,7 +806,7 @@ Response format:
         { signal: controller.signal }
       );
 
-      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
+      const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
       await prisma.projectMessage.create({
@@ -828,6 +833,10 @@ Response format:
         toolCall: mainToolCall,
         query: toolQuery,
         chartSpec,
+        wantsChart,
+        question,
+        contextText: context,
+        chartExtraData: topicsExtraData,
         ownerUserEmail: session.user.email,
         apiKeyUserId: session.user.id,
         allChunksForCitations: allChunks,
@@ -842,9 +851,9 @@ Response format:
       });
     }
 
-    const assistantText = (completion?.choices?.[0]?.message?.content || "")
-      .replace(/\*/g, "")
-      .trim();
+    const assistantText = stripMarkdownArtifacts(
+      (completion?.choices?.[0]?.message?.content || "").trim()
+    );
 
     // Citations: documents whose exact filename was quoted in the answer.
     // `allChunks` already carries { documentId, documentName } per chunk — dedupe to

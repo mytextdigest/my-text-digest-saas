@@ -119,5 +119,6 @@ export async function resolveToolCall({
   return {
     completion,
     externalKnowledgeQuery: approved ? query : null,
+    toolResultContent: approved ? toolResultContent : null,
   };
 }

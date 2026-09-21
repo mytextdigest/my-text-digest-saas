@@ -5,6 +5,8 @@ import OpenAI from "openai";
 import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
 import { takePendingToolCall, resolveToolCall } from "@/lib/generalKnowledgeTool";
+import { generateChartSpec } from "@/lib/chartSpec";
+import { stripMarkdownArtifacts } from "@/lib/textFormat";
 
 export async function POST(req) {
   const session = await getServerSession();
@@ -45,7 +47,7 @@ export async function POST(req) {
   });
 
   try {
-    const { completion, externalKnowledgeQuery } = await resolveToolCall({
+    const { completion, externalKnowledgeQuery, toolResultContent } = await resolveToolCall({
       openai,
       baseMessages: pending.baseMessages,
       assistantMessage: pending.assistantMessage,
@@ -55,7 +57,29 @@ export async function POST(req) {
       completionOptions: pending.completionOptions,
     });
 
-    const assistantText = (completion?.choices?.[0]?.message?.content || "").trim();
+    const assistantText = stripMarkdownArtifacts(
+      (completion?.choices?.[0]?.message?.content || "").trim()
+    );
+
+    // The chart stashed at ask-time was built from document/project context
+    // alone, before we knew whether general knowledge would be consulted.
+    // That's still correct if the user declined (answer stays local-only),
+    // but if they approved, the final answer is grounded in local context
+    // PLUS the fetched general-knowledge text — regenerate the chart against
+    // that combined context so it actually matches what the answer says.
+    let chartSpec = pending.chartSpec || null;
+    if (pending.wantsChart && approved) {
+      const combinedContext = toolResultContent
+        ? `${pending.contextText || ""}\n\nExternal/general knowledge used to answer this question:\n${toolResultContent}`
+        : pending.contextText;
+      chartSpec = await generateChartSpec({
+        openai,
+        question: pending.question || pending.query,
+        contextText: combinedContext,
+        extraData: pending.chartExtraData,
+        signal: controller.signal,
+      });
+    }
 
     if (pending.kind === "document") {
       await prisma.message.update({ where: { id: pending.userMsgId }, data: { status: "done" } });
@@ -65,7 +89,7 @@ export async function POST(req) {
           role: "assistant",
           content: assistantText,
           status: "done",
-          chartData: pending.chartSpec,
+          chartData: chartSpec,
           externalKnowledgeQuery: externalKnowledgeQuery || null,
         },
       });
@@ -73,7 +97,7 @@ export async function POST(req) {
         success: true,
         conversationId: pending.conversationId,
         answer: assistantText,
-        chart: pending.chartSpec,
+        chart: chartSpec,
         externalKnowledgeQuery: externalKnowledgeQuery || null,
       });
     }
@@ -94,7 +118,7 @@ export async function POST(req) {
         role: "assistant",
         content: assistantText,
         status: "done",
-        chartData: pending.chartSpec,
+        chartData: chartSpec,
         citations: citations.length ? citations : undefined,
         externalKnowledgeQuery: externalKnowledgeQuery || null,
       },
@@ -102,7 +126,7 @@ export async function POST(req) {
     return NextResponse.json({
       success: true,
       answer: assistantText,
-      chart: pending.chartSpec,
+      chart: chartSpec,
       citations,
       externalKnowledgeQuery: externalKnowledgeQuery || null,
     });
