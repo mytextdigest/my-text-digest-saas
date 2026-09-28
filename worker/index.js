@@ -18,6 +18,13 @@ import { processSlideOutlineJob } from "./processSlideOutline.js";
 import { processSlideBuildJob } from "./processSlideBuild.js";
 import { processSlideEditJob } from "./processSlideEdit.js";
 import { processCompareJob } from "./compareWorker.js";
+import {
+  TABLE_JOB_TYPES,
+  processTablesJob,
+  processTablesScanJob,
+  processTablesFiguresJob,
+  processTablesReembedJob,
+} from "./processTables.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -347,9 +354,10 @@ async function processChunkJob(job) {
   // 5. Insert chunks (atomic)
   // -----------------------------
   try {
-    // Remove any partial leftovers (idempotency)
+    // Remove any partial leftovers (idempotency). Table chunks belong to
+    // the tables stage, which replaces them itself.
     await prisma.chunk.deleteMany({
-      where: { documentId: docId },
+      where: { documentId: docId, tableId: null },
     });
 
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
@@ -442,6 +450,23 @@ async function processChunkJob(job) {
     })
   );
 
+  // Forked, non-blocking tables stage (same shape as figures): detects
+  // tables in PDF/DOCX/spreadsheets/images and never touches
+  // Document.status. See worker/processTables.js.
+  await sqs.send(
+    new SendMessageCommand({
+      QueueUrl: QUEUE_URL,
+      MessageBody: JSON.stringify({
+        type: "tables",
+        docId,
+        s3Key,
+        filename,
+        projectId: projectId || existingDoc.projectId,
+        userId: existingDoc.userId,
+      }),
+    })
+  );
+
   console.log(`✅ Chunk job complete: ${docId}`);
   endTotal();
 }
@@ -462,8 +487,9 @@ async function processEmbeddingJob(job) {
     data: { status: "embedding" },
   });
 
+  // Table chunks are embedded by the tables stage itself.
   const chunks = await prisma.chunk.findMany({
-    where: { documentId: docId },
+    where: { documentId: docId, tableId: null },
     orderBy: { chunkIndex: "asc" },
   });
 
@@ -526,9 +552,10 @@ async function processSummarizationJob(job) {
     data: { status: "summarizing" },
   });
 
-  // Load chunks
+  // Load chunks. Table chunks are retrieval-only: summaries below are
+  // mapped back by chunkIndex position, which they'd throw off.
   const chunks = await prisma.chunk.findMany({
-    where: { documentId: docId },
+    where: { documentId: docId, tableId: null },
     orderBy: { chunkIndex: "asc" },
   });
 
@@ -647,6 +674,10 @@ async function processJob(job) {
   if (job.type === "slide-build")   return processSlideBuildJob(job);
   if (job.type === "slide-edit")    return processSlideEditJob(job);
   if (job.type === "compare")       return processCompareJob(job);
+  if (job.type === "tables")         return processTablesJob(job);
+  if (job.type === "tables-scan")    return processTablesScanJob(job);
+  if (job.type === "tables-figures") return processTablesFiguresJob(job);
+  if (job.type === "tables-reembed") return processTablesReembedJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }
@@ -734,6 +765,13 @@ async function mainLoop() {
 // already catches every internal error onto DocumentComparison.status/
 // errorMessage itself, which is the correct user-facing state for this
 // feature independent of recordJobFailure.
+//
+// The table jobs (tables, tables-scan, tables-figures, tables-reembed) are
+// excluded for the same reason as figures: each catches every internal
+// error onto TableExtractionLog.status/errorMessage and never throws, so
+// only a watchdog timeout reaches this catch — and table extraction must
+// never flip a document the user can already chat with into "failed"
+// (tables-reembed also carries a tableId, not a docId).
 async function recordJobFailure(body, err) {
   if (body?.type === "slide-outline" || body?.type === "slide-build") {
     if (!body.deckId) return;
@@ -761,7 +799,7 @@ async function recordJobFailure(body, err) {
   }
 
   const docId = body?.docId;
-  if (!docId || body.type === "cluster" || body.type === "figures" || body.type === "graph" || body.type === "graph-batch" || body.type === "compare") return;
+  if (!docId || body.type === "cluster" || body.type === "figures" || body.type === "graph" || body.type === "graph-batch" || body.type === "compare" || TABLE_JOB_TYPES.includes(body.type)) return;
 
   const data = {
     lastError: String(err?.message || err).slice(0, 2000),

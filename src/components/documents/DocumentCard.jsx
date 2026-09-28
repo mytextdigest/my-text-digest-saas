@@ -135,6 +135,11 @@ const DocumentCard = ({
                   {visibilityBadge.label}
                 </span>
               )}
+              {document.tablesFound > 0 && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300 whitespace-nowrap">
+                  {document.tablesFound} table{document.tablesFound === 1 ? '' : 's'}
+                </span>
+              )}
               {file_size && <span className="truncate">{file_size}</span>}
             </div>
             {statusBadge && (
@@ -254,6 +259,11 @@ const DocumentCard = ({
                   ) : (
                     <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-medium', visibilityBadge.className)}>
                       {visibilityBadge.label}
+                    </span>
+                  )}
+                  {document.tablesFound > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300 whitespace-nowrap">
+                      {document.tablesFound} table{document.tablesFound === 1 ? '' : 's'}
                     </span>
                   )}
                   {statusBadge && (

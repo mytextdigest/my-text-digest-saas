@@ -19,6 +19,7 @@ import { alignChunks, selectForClassification, enforceCategory } from "../src/li
 import { classifyUnit, buildOverallSummary } from "../src/lib/compareClassify.js";
 import { buildInsight } from "../src/lib/compareInsight.js";
 import { getOpenAIForDocument } from "../src/lib/openaiForDocument.js";
+import { pairTablesForComparison } from "../src/lib/tables/pairing.js";
 
 const prisma = new PrismaClient();
 
@@ -28,7 +29,8 @@ const CLASSIFY_CONCURRENCY = 3;
 
 async function loadChunks(documentId) {
   const rows = await prisma.chunk.findMany({
-    where: { documentId, embedding: { not: null }, text: { not: null } },
+    // Table chunks are compared structurally (tables/pairing.js), not as text.
+    where: { documentId, embedding: { not: null }, text: { not: null }, tableId: null },
     orderBy: { chunkIndex: "asc" },
   });
   return rows.map((c) => ({ id: c.id, text: c.text, embedding: c.embedding }));
@@ -146,9 +148,18 @@ export async function processCompareJob(job) {
       console.warn("⚠️  comparison compact insight failed:", err.message);
     }
 
+    // Matching tables with exact value deltas (deterministic, no LLM). Its
+    // failure never fails the comparison.
+    let tablePairs = null;
+    try {
+      tablePairs = await pairTablesForComparison({ prisma, documentAId, documentBId });
+    } catch (err) {
+      console.warn("⚠️  comparison table pairing failed:", err.message);
+    }
+
     await prisma.documentComparison.update({
       where: { id: comparisonId },
-      data: { status: "ready", summaryJson: summary, insightCompact, completedAt: new Date() },
+      data: { status: "ready", summaryJson: summary, insightCompact, tablePairsJson: tablePairs ?? undefined, completedAt: new Date() },
     });
 
     console.log(`✅ Comparison job complete: ${comparisonId}`);

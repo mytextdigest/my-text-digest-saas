@@ -84,8 +84,8 @@ model Document {
   chunks             Chunk[]
   conversations      Conversation[]
   topicDocument      TopicDocument?
-  project            Project?            @relation(fields: [projectId], references: [id])
-  user               User                @relation(fields: [userId], references: [id])
+  project            Project?             @relation(fields: [projectId], references: [id])
+  user               User                 @relation(fields: [userId], references: [id])
   figures            Figure[]
   slideDecks         SlideDeck[]
   slideImages        SlideImage[]
@@ -96,22 +96,27 @@ model Document {
   graphInsights      GraphInsight[]
   comparisonsAsA     DocumentComparison[] @relation("ComparisonsAsA")
   comparisonsAsB     DocumentComparison[] @relation("ComparisonsAsB")
+  tables             DocumentTable[]
+  tableExtractionLog TableExtractionLog?
 }
 
 model Chunk {
-  id             String          @id @default(cuid())
-  chunkIndex     Int?            @map("chunk_index")
+  id             String              @id @default(cuid())
+  chunkIndex     Int?                @map("chunk_index")
   text           String?
   summary        String?
   embedding      Json?
   metadata       Json?
-  documentId     String          @map("document_id")
-  document       Document        @relation(fields: [documentId], references: [id])
+  documentId     String              @map("document_id")
+  tableId        String?             @map("table_id") // synthetic table chunk → DocumentTable.id (retrieval-only)
+  document       Document            @relation(fields: [documentId], references: [id])
   figures        Figure[]
   entityMentions EntityMention[]
   relationships  Relationship[]
   findingsAsA    ComparisonFinding[] @relation("FindingChunkA")
   findingsAsB    ComparisonFinding[] @relation("FindingChunkB")
+
+  @@index([tableId])
 }
 
 model Figure {
@@ -129,6 +134,7 @@ model Figure {
   chunkId      String?  @map("chunk_id")
   status       String   @default("pending") // pending | captioning | ready | error
   errorMessage String?  @map("error_message")
+  tableScan    String?  @map("table_scan") // found | none | not-table | error (table vision)
   createdAt    DateTime @default(now()) @map("created_at")
   document     Document @relation(fields: [documentId], references: [id])
   chunk        Chunk?   @relation(fields: [chunkId], references: [id])
@@ -189,6 +195,8 @@ model Message {
   chartData              Json?        @map("chart_data")
   externalKnowledgeQuery String?      @map("external_knowledge_query")
   insightJson            Json?        @map("insight_json")
+  derivedTableId         String?      @map("derived_table_id")
+  tableCitations         Json?        @map("table_citations")
   conversation           Conversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -214,6 +222,8 @@ model ProjectMessage {
   externalKnowledgeQuery String?             @map("external_knowledge_query")
   comparisonId           String?             @map("comparison_id")
   insightJson            Json?               @map("insight_json")
+  derivedTableId         String?             @map("derived_table_id")
+  tableCitations         Json?               @map("table_citations")
   conversation           ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -409,6 +419,7 @@ model DocumentComparison {
   errorMessage       String?   @map("error_message")
   insightCompact     Json?     @map("insight_compact") // {sections:[...]}
   insightDescriptive Json?     @map("insight_descriptive") // {sections:[...]}, lazy
+  tablePairsJson     Json?     @map("table_pairs_json") // matched tables with exact value deltas (tables/pairing.js)
   createdAt          DateTime  @default(now()) @map("created_at")
   completedAt        DateTime? @map("completed_at")
 
@@ -440,4 +451,72 @@ model ComparisonFinding {
   documentBChunk Chunk?             @relation("FindingChunkB", fields: [documentBChunkId], references: [id])
 
   @@index([comparisonId])
+}
+
+// Automatic Table Extraction
+// JSON layers use the canonical table shape (desktop plan §2), stored
+// expanded. Effective table = edited ?? clean ?? raw.
+
+model DocumentTable {
+  id                 String    @id @default(cuid())
+  documentId         String    @map("document_id")
+  tableIndex         Int       @map("table_index")
+  pageStart          Int?      @map("page_start")
+  pageEnd            Int?      @map("page_end")
+  sheetName          String?   @map("sheet_name")
+  sourceType         String    @map("source_type") // docx_xml | pdf_text | spreadsheet | pdf_vision | image_vision | figure_vision
+  title              String?
+  titleSource        String?   @map("title_source") // caption | generated | sheet | user
+  description        String?
+  caption            String?
+  confidence         Float?
+  rowCount           Int?      @map("row_count")
+  colCount           Int?      @map("col_count")
+  rawJson            Json      @map("raw_json")
+  cleanJson          Json?     @map("clean_json")
+  editedJson         Json?     @map("edited_json")
+  editedAt           DateTime? @map("edited_at")
+  groundingIssues    Int       @default(0) @map("grounding_issues")
+  signature          String?
+  signatureEmbedding Json?     @map("signature_embedding")
+  chunkId            String?   @map("chunk_id")
+  figureId           String?   @map("figure_id") // no FK: deleting a figure keeps the table
+  status             String    @default("ready")
+  errorMessage       String?   @map("error_message")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  document           Document  @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, tableIndex])
+  @@index([documentId])
+}
+
+model TableExtractionLog {
+  documentId     String    @id @map("document_id")
+  status         String // running | ready | error | disabled
+  tablesFound    Int       @default(0) @map("tables_found")
+  candidatesSeen Int       @default(0) @map("candidates_seen")
+  skippedLowConf Int       @default(0) @map("skipped_low_conf")
+  skippedForCap  Int       @default(0) @map("skipped_for_cap")
+  repairedByLlm  Int       @default(0) @map("repaired_by_llm")
+  visionJson     Json?     @map("vision_json") // { scannedPages, checkedPages, calls, progress? }
+  errorMessage   String?   @map("error_message")
+  startedAt      DateTime  @default(now()) @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  document       Document  @relation(fields: [documentId], references: [id])
+}
+
+model DerivedTable {
+  id             String   @id @default(cuid())
+  projectId      String?  @map("project_id")
+  documentId     String?  @map("document_id")
+  kind           String // compare | select
+  title          String?
+  requestJson    Json?    @map("request_json")
+  tableJson      Json     @map("table_json")
+  sourceTableIds String[] @map("source_table_ids") // Postgres text[]: cascade via `hasSome`
+  warningsJson   Json?    @map("warnings_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([projectId])
 }

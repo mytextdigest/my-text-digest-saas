@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, GitCompare, RefreshCw, Trash2, Loader2, AlertCircle,
   Equal, Pencil, Plus, Minus, FileText, Lightbulb, History, ListFilter, BookOpen,
-  Sparkles, Download,
+  Sparkles, Download, Table as TableIcon,
 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
 import { InsightView } from '@/components/insights/InsightView';
+import TablePairsView from '@/components/tables/TablePairsView';
 import { cn, formatDate } from '@/lib/utils';
 
 // Poll interval for the 'generating' status — same pattern as
@@ -221,7 +222,7 @@ function CompareContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
-  const [viewMode, setViewMode] = useState('findings'); // 'findings' | 'document' | 'insight'
+  const [viewMode, setViewMode] = useState('findings'); // 'findings' | 'document' | 'insight' | 'tables'
   const [insightStyle, setInsightStyle] = useState('compact'); // 'compact' | 'descriptive'
   const [generatingInsight, setGeneratingInsight] = useState(false);
   const [insightError, setInsightError] = useState(null);
@@ -508,6 +509,10 @@ function CompareContent() {
                     <p className="text-xs text-gray-400 dark:text-gray-500">
                       Document A on the left, Document B on the right, in original reading order — struck-through is removed, underlined is added.
                     </p>
+                  ) : viewMode === 'tables' ? (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                      Matching tables from both documents, with values copied from each and changes calculated.
+                    </p>
                   ) : (
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="flex items-center gap-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
@@ -586,6 +591,20 @@ function CompareContent() {
                     >
                       <Sparkles className="w-3.5 h-3.5" /> Insights
                     </button>
+                    {comparison.tablePairs?.pairs?.length > 0 && (
+                      <button
+                        onClick={() => setViewMode('tables')}
+                        className={cn(
+                          'flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded transition-colors',
+                          viewMode === 'tables'
+                            ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                            : 'text-gray-400 hover:text-gray-600'
+                        )}
+                      >
+                        <TableIcon className="w-3.5 h-3.5" /> Tables
+                        <span className="text-[10px] opacity-70">{comparison.tablePairs.pairs.length}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -616,6 +635,14 @@ function CompareContent() {
                           ))}
                         </motion.div>
                       )
+                    ) : viewMode === 'tables' ? (
+                      <motion.div key="tables-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <TablePairsView
+                          tablePairs={comparison.tablePairs}
+                          documentAName={comparison.documentAFilename}
+                          documentBName={comparison.documentBFilename}
+                        />
+                      </motion.div>
                     ) : viewMode === 'document' ? (
                       <motion.div
                         key="document-view"

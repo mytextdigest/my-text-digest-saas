@@ -50,6 +50,7 @@ export async function GET(req, { params }) {
       errorMessage: comparison.errorMessage,
       insightCompact: comparison.insightCompact || null,
       insightDescriptive: comparison.insightDescriptive || null,
+      tablePairs: comparison.tablePairsJson || null,
       createdAt: comparison.createdAt,
       completedAt: comparison.completedAt,
     },

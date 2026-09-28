@@ -14,6 +14,11 @@ import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/
 import { COMPARE_DOCUMENTS_TOOL, runCompareDocumentsTool } from "@/lib/compareQueryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
 import { stripMarkdownArtifacts } from "@/lib/textFormat";
+import { FIND_TABLES_TOOL, COMPARE_TABLES_TOOL, runFindTablesTool, runCompareTablesTool } from "@/lib/tables/queryTool";
+import {
+  buildTableContext, pickTableCitations, allTableCitations, tableChartExtraData, addToolCitations,
+} from "@/lib/tables/chatContext";
+import { toChartData } from "@/lib/tables/serialize";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -258,6 +263,7 @@ export async function POST(req) {
         text:  c.text || c.summary || "",
         docSummary: doc?.summary || "",
         embedding: c.embedding || null,
+        tableId: c.tableId || null,
       };
     });
 
@@ -563,8 +569,14 @@ BM25 retrieval has selected the most relevant chunks.
 
     const selected = scored.slice(0, Math.min(8, scored.length));
 
+    // Tables hit by retrieval are expanded in full (FR-27); their chunk
+    // slices are then redundant.
+    const tableScope = { documentId: { in: docIds } };
+    const tableContext = await buildTableContext(prisma, selected, { where: tableScope });
+    let tableCitationsSource = tableContext.tables;
+
     // 10) Build context grouped by document
-    const grouped = selected.reduce((acc, s) => {
+    const grouped = selected.filter((c) => !(c.tableId && tableContext.expandedIds.has(c.tableId))).reduce((acc, s) => {
       acc[s.documentName] = acc[s.documentName] || [];
       acc[s.documentName].push(s);
       return acc;
@@ -580,7 +592,7 @@ BM25 retrieval has selected the most relevant chunks.
     });
 
     const docMeta = docs.map((d, i) => `${i + 1}. ${d.filename}`).join("\n");
-    const context = `Project contains ${docs.length} documents:\n${docMeta}\n\n${contextBlocks.join("\n\n")}`;
+    const context = `Project contains ${docs.length} documents:\n${docMeta}\n\n${tableContext.text}${contextBlocks.join("\n\n")}`;
 
     // 10.4) DEEP ANALYSIS / INSIGHT MODE — decision 2: checked before chart
     // detection and the main factual-answer call, and runs INSTEAD of them.
@@ -618,12 +630,16 @@ BM25 retrieval has selected the most relevant chunks.
     // 10.5) CHART GENERATION — runs BEFORE the main answer call so the answer
     // can react to whether a chart was actually produced (see chartNote below).
     let chartSpec = null;
+    // Exact rows of the expanded tables (FR-24), alongside topic counts.
+    const withTableData = (tableData) =>
+      topicsExtraData && tableData ? { topics: topicsExtraData, tables: tableData } : tableData || topicsExtraData;
+    const chartExtraData = withTableData(tableChartExtraData(tableCitationsSource));
     if (wantsChart) {
       chartSpec = await generateChartSpec({
         openai,
         question,
         contextText: context,
-        extraData: topicsExtraData,
+        extraData: chartExtraData,
         signal: controller.signal,
       });
     }
@@ -672,6 +688,13 @@ If the question asks how two specific documents differ or compare, or to compare
 documents by name, call the compare_documents tool with both document names instead of
 guessing from the documents below.
 
+If the user wants figures from tables compared side by side across two or more documents (e.g.
+"Compare revenue by region between the 2024 and 2025 annual reports"), call the compare_tables tool
+— it computes the values and changes exactly. Use compare_documents only for overall differences in
+the documents' text. When compare_tables returns a table, the app shows it below your answer: do not
+repeat the whole table; summarise the main changes using only its numbers and mention any warnings.
+To list or show extracted tables ("what tables are in these reports?"), call find_tables.
+
 You may:
 - Summarize document content
 - Explain document content
@@ -710,7 +733,7 @@ Response format:
           messages: [systemMsg, ...memoryMsgs, userMsgForModel],
           temperature: 0.3,
           max_tokens: 800,
-          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL, COMPARE_DOCUMENTS_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL, COMPARE_DOCUMENTS_TOOL, COMPARE_TABLES_TOOL, FIND_TABLES_TOOL],
           tool_choice: "auto",
         },
         { signal: controller.signal }
@@ -725,7 +748,97 @@ Response format:
       activeRequests.delete(requestId);
     }
 
+    // Citations: documents whose exact filename was quoted in the answer.
+    // `allChunks` already carries { documentId, documentName } per chunk — dedupe to
+    // one entry per document, then keep only the ones the model actually named.
+    const documentCitations = (answerText) => {
+      const uniqueDocs = new Map();
+      for (const c of allChunks) {
+        if (!uniqueDocs.has(c.documentId)) uniqueDocs.set(c.documentId, c.documentName);
+      }
+      return [...uniqueDocs.entries()]
+        .filter(([, filename]) => filename && answerText.includes(filename))
+        .map(([id, filename]) => ({ id, filename }));
+    };
+
     const mainToolCall = completion?.choices?.[0]?.message?.tool_calls?.[0];
+
+    // compare_tables / find_tables only read the project's own extracted
+    // tables, so they run inline. compare_tables' numbers are computed in
+    // src/lib/tables/derive.js; the model only narrates from the result text.
+    if (mainToolCall?.function?.name === "compare_tables" || mainToolCall?.function?.name === "find_tables") {
+      let args = {};
+      try {
+        args = JSON.parse(mainToolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+      const selectedNames = docs.map((d) => d.filename);
+      const toolResult = mainToolCall.function.name === "compare_tables"
+        ? await runCompareTablesTool({
+            prisma, openai, projectId, query: args.query || question,
+            documents: Array.isArray(args.documents) && args.documents.length >= 2 ? args.documents : selectedNames,
+            periods: args.periods, rowFilter: args.row_filter,
+          })
+        : await runFindTablesTool({ prisma, openai, scope: { projectId }, query: args.query || "", documents: args.documents });
+      const derivedTableId = toolResult.derivedTableId || null;
+      tableCitationsSource = await addToolCitations(prisma, tableCitationsSource, toolResult.tableCitations, tableScope);
+
+      const followUp = await openai.chat.completions.create(
+        {
+          model: "gpt-4o-mini",
+          messages: [
+            systemMsg,
+            ...memoryMsgs,
+            userMsgForModel,
+            completion.choices[0].message,
+            { role: "tool", tool_call_id: mainToolCall.id, content: toolResult.error || toolResult.resultText },
+          ],
+          temperature: 0.2,
+          max_tokens: 800,
+        },
+        { signal: controller.signal }
+      );
+      const tablesAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+
+      // A derived comparison replaces the pre-answer chart: chart its exact rows.
+      if (wantsChart && derivedTableId) {
+        const derived = await prisma.derivedTable.findUnique({ where: { id: derivedTableId } });
+        if (derived) {
+          chartSpec = await generateChartSpec({
+            openai,
+            question,
+            contextText: context,
+            extraData: withTableData(toChartData(derived.tableJson, { title: derived.title })),
+            signal: controller.signal,
+          }) || chartSpec;
+        }
+      }
+
+      const tableCitations = derivedTableId
+        ? allTableCitations(tableCitationsSource)
+        : pickTableCitations(tablesAnswerText, tableCitationsSource);
+      const citations = documentCitations(tablesAnswerText);
+
+      await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
+      await prisma.projectMessage.create({
+        data: {
+          conversationId: conv.id,
+          role: "assistant",
+          content: tablesAnswerText,
+          status: "done",
+          chartData: chartSpec,
+          citations: citations.length ? citations : undefined,
+          derivedTableId,
+          tableCitations: tableCitations.length ? tableCitations : undefined,
+        },
+      });
+
+      return NextResponse.json({
+        success: true, answer: tablesAnswerText, chart: chartSpec, citations, derivedTableId, tableCitations,
+      });
+    }
+
     if (mainToolCall?.function?.name === "compare_documents") {
       let args = {};
       try {
@@ -807,13 +920,17 @@ Response format:
       );
 
       const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const kgTableCitations = pickTableCitations(kgAnswerText, tableCitationsSource);
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
       await prisma.projectMessage.create({
-        data: { conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done" },
+        data: {
+          conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done",
+          tableCitations: kgTableCitations.length ? kgTableCitations : undefined,
+        },
       });
 
-      return NextResponse.json({ success: true, answer: kgAnswerText });
+      return NextResponse.json({ success: true, answer: kgAnswerText, tableCitations: kgTableCitations });
     }
 
     if (mainToolCall?.function?.name === "consult_general_knowledge") {
@@ -836,7 +953,7 @@ Response format:
         wantsChart,
         question,
         contextText: context,
-        chartExtraData: topicsExtraData,
+        chartExtraData,
         ownerUserEmail: session.user.email,
         apiKeyUserId: session.user.id,
         allChunksForCitations: allChunks,
@@ -855,16 +972,8 @@ Response format:
       (completion?.choices?.[0]?.message?.content || "").trim()
     );
 
-    // Citations: documents whose exact filename was quoted in the answer.
-    // `allChunks` already carries { documentId, documentName } per chunk — dedupe to
-    // one entry per document, then keep only the ones the model actually named.
-    const uniqueDocs = new Map();
-    for (const c of allChunks) {
-      if (!uniqueDocs.has(c.documentId)) uniqueDocs.set(c.documentId, c.documentName);
-    }
-    const citations = [...uniqueDocs.entries()]
-      .filter(([, filename]) => filename && assistantText.includes(filename))
-      .map(([id, filename]) => ({ id, filename }));
+    const citations = documentCitations(assistantText);
+    const tableCitations = pickTableCitations(assistantText, tableCitationsSource);
 
     // 13) Persist messages: update user -> done and insert assistant
     await prisma.projectMessage.update({
@@ -880,10 +989,11 @@ Response format:
         status: "done",
         chartData: chartSpec,
         citations: citations.length ? citations : undefined,
+        tableCitations: tableCitations.length ? tableCitations : undefined,
       },
     });
 
-    return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec, citations });
+    return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec, citations, tableCitations });
   } catch (err) {
     console.error("❌ ask-project:", err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

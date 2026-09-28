@@ -16,6 +16,8 @@ import {
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
 import { stripMarkdownArtifacts } from "@/lib/textFormat";
+import { FIND_TABLES_TOOL, runFindTablesTool } from "@/lib/tables/queryTool";
+import { buildTableContext, pickTableCitations, tableChartExtraData, addToolCitations } from "@/lib/tables/chatContext";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -29,7 +31,7 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id:documentId } = await params;
-    const { question, conversationId: incomingConvId, requestId } = await req.json();
+    const { question, conversationId: incomingConvId, requestId, pinnedTableId = null } = await req.json();
 
     const controller = new AbortController();
     activeRequests.set(requestId, controller);
@@ -121,7 +123,8 @@ export async function POST(req, { params }) {
       id: c.id,
       chunkIndex: c.chunkIndex,
       text: c.text?.trim() || "",
-      embedding: c.embedding
+      embedding: c.embedding,
+      tableId: c.tableId
     }));
 
     // ----------------------------
@@ -207,7 +210,15 @@ export async function POST(req, { params }) {
     // ----------------------------
     // 10) BUILD CONTEXT FOR GPT
     // ----------------------------
-    const contextText = selected
+    // Tables hit by retrieval (or pinned by "Ask about this table") are
+    // expanded in full; their chunk slices are then redundant.
+    const tableContext = await buildTableContext(prisma, selected, {
+      pinnedTableIds: pinnedTableId ? [pinnedTableId] : [],
+      where: { documentId },
+    });
+    let tableCitationsSource = tableContext.tables;
+    const contextText = tableContext.text + selected
+      .filter(c => !(c.tableId && tableContext.expandedIds.has(c.tableId)))
       .map(c => `Chunk ${c.chunkIndex}:\n${c.text}`)
       .join("\n\n");
 
@@ -261,7 +272,9 @@ export async function POST(req, { params }) {
     if (wantsChart) {
       const spreadsheetExts = ["xlsx", "xls", "csv"];
       const docExtForChart = doc.filename?.split(".").pop()?.toLowerCase();
-      if (spreadsheetExts.includes(docExtForChart) && doc.filePath) {
+      // Exact table rows (FR-24) take priority over re-parsing chunk text.
+      chartExtraData = tableChartExtraData(tableCitationsSource);
+      if (!chartExtraData && spreadsheetExts.includes(docExtForChart) && doc.filePath) {
         try {
           const object = await s3Client.send(
             new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: doc.filePath })
@@ -386,7 +399,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
           messages: [systemMsg, ...memoryMsgs, userMsgGPT],
           temperature: 0.2,
           max_tokens: 700,
-          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL],
+          tools: [GENERAL_KNOWLEDGE_TOOL, QUERY_KNOWLEDGE_GRAPH_TOOL, FIND_TABLES_TOOL],
           tool_choice: "auto"
         },
         {
@@ -480,13 +493,67 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       }
 
       const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const kgTableCitations = pickTableCitations(kgAnswerText, tableCitationsSource);
 
       await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
       await prisma.message.create({
-        data: { conversationId, role: "assistant", content: kgAnswerText, status: "done" },
+        data: {
+          conversationId, role: "assistant", content: kgAnswerText, status: "done",
+          tableCitations: kgTableCitations.length ? kgTableCitations : undefined,
+        },
       });
 
-      return NextResponse.json({ success: true, conversationId, answer: kgAnswerText });
+      return NextResponse.json({ success: true, conversationId, answer: kgAnswerText, tableCitations: kgTableCitations });
+    }
+
+    // ----------------------------
+    // 12.45) FIND-TABLES TOOL CALL — lists/shows this document's extracted
+    // tables. Local data only, so it runs inline like query_knowledge_graph.
+    // ----------------------------
+    if (toolCall?.function?.name === "find_tables") {
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+      const result = await runFindTablesTool({ prisma, openai, scope: { documentId }, query: args.query || "", documents: null });
+      tableCitationsSource = await addToolCitations(prisma, tableCitationsSource, result.tableCitations, { documentId });
+
+      activeRequests.set(requestId, controller);
+      let followUp;
+      try {
+        followUp = await openai.chat.completions.create(
+          {
+            model: "gpt-4o-mini",
+            messages: [
+              systemMsg,
+              ...memoryMsgs,
+              userMsgGPT,
+              completion.choices[0].message,
+              { role: "tool", tool_call_id: toolCall.id, content: result.error || result.resultText },
+            ],
+            temperature: 0.2,
+            max_tokens: 900,
+          },
+          { signal: controller.signal }
+        );
+      } finally {
+        activeRequests.delete(requestId);
+      }
+
+      const tablesAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const findTableCitations = pickTableCitations(tablesAnswerText, tableCitationsSource);
+
+      await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
+      await prisma.message.create({
+        data: {
+          conversationId, role: "assistant", content: tablesAnswerText, status: "done", chartData: chartSpec,
+          tableCitations: findTableCitations.length ? findTableCitations : undefined,
+        },
+      });
+
+      return NextResponse.json({ success: true, conversationId, answer: tablesAnswerText, chart: chartSpec, tableCitations: findTableCitations });
     }
 
     // ----------------------------
@@ -531,6 +598,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
     const assistantText = stripMarkdownArtifacts(
       (completion?.choices?.[0]?.message?.content || "").trim()
     );
+    const tableCitations = pickTableCitations(assistantText, tableCitationsSource);
 
     // ----------------------------
     // 13) SAVE ASSISTANT MESSAGE
@@ -546,7 +614,8 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         role: "assistant",
         content: assistantText,
         status: "done",
-        chartData: chartSpec
+        chartData: chartSpec,
+        tableCitations: tableCitations.length ? tableCitations : undefined
       }
     });
 
@@ -557,7 +626,8 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       success: true,
       conversationId,
       answer: assistantText,
-      chart: chartSpec
+      chart: chartSpec,
+      tableCitations
     });
 
   } catch (err) {

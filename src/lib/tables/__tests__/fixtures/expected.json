@@ -1,0 +1,950 @@
+{
+  "annual_report_2025": [
+    {
+      "caption": "Table 1: Revenue by Region (in $ millions)",
+      "title": "Revenue by Region",
+      "headers": [
+        "Region",
+        "2025",
+        "2024"
+      ],
+      "rows": [
+        [
+          "North America",
+          "1,234.5",
+          "1,102.0"
+        ],
+        [
+          "Europe",
+          "845.2",
+          "790.4"
+        ],
+        [
+          "Asia Pacific",
+          "612.8",
+          "540.3"
+        ],
+        [
+          "Latin America",
+          "(12.0)",
+          "8.5"
+        ],
+        [
+          "Total",
+          "2,680.5",
+          "2,441.2"
+        ]
+      ],
+      "multiPage": false
+    },
+    {
+      "caption": "Table 2: Operating Expenses (in $ millions)",
+      "title": "Operating Expenses",
+      "headers": [
+        "Category",
+        "2025",
+        "2024"
+      ],
+      "rows": [
+        [
+          "Research & development",
+          "410.2",
+          "380.9"
+        ],
+        [
+          "Sales and marketing",
+          "298.7",
+          "301.1"
+        ],
+        [
+          "General and administrative",
+          "120.4",
+          "115.0a"
+        ],
+        [
+          "Total operating expenses",
+          "829.3",
+          "797.0"
+        ]
+      ],
+      "multiPage": false
+    },
+    {
+      "caption": "Table 3: Store Locations",
+      "title": "Store Locations",
+      "headers": [
+        "City",
+        "Country",
+        "Stores",
+        "Floor area (sq ft)"
+      ],
+      "rows": [
+        [
+          "Boston 1",
+          "USA",
+          "5",
+          "151,000"
+        ],
+        [
+          "Chicago 1",
+          "USA",
+          "12",
+          "282,000"
+        ],
+        [
+          "Denver 1",
+          "USA",
+          "19",
+          "413,000"
+        ],
+        [
+          "Austin 1",
+          "USA",
+          "3",
+          "544,000"
+        ],
+        [
+          "Seattle 1",
+          "USA",
+          "10",
+          "675,000"
+        ],
+        [
+          "Toronto 1",
+          "Canada",
+          "17",
+          "806,000"
+        ],
+        [
+          "Berlin 1",
+          "Germany",
+          "24",
+          "937,000"
+        ],
+        [
+          "Paris 1",
+          "France",
+          "8",
+          "168,000"
+        ],
+        [
+          "Madrid 1",
+          "Spain",
+          "15",
+          "299,000"
+        ],
+        [
+          "Rome 1",
+          "Italy",
+          "22",
+          "430,000"
+        ],
+        [
+          "Tokyo 1",
+          "Japan",
+          "6",
+          "561,000"
+        ],
+        [
+          "Osaka 1",
+          "Japan",
+          "13",
+          "692,000"
+        ],
+        [
+          "Sydney 1",
+          "Australia",
+          "20",
+          "823,000"
+        ],
+        [
+          "Lima 1",
+          "Peru",
+          "4",
+          "954,000"
+        ],
+        [
+          "Bogota 1",
+          "Colombia",
+          "11",
+          "185,000"
+        ],
+        [
+          "Dublin 1",
+          "Ireland",
+          "18",
+          "316,000"
+        ],
+        [
+          "Oslo 1",
+          "Norway",
+          "2",
+          "447,000"
+        ],
+        [
+          "Vienna 1",
+          "Austria",
+          "9",
+          "578,000"
+        ],
+        [
+          "Prague 1",
+          "Czechia",
+          "16",
+          "709,000"
+        ],
+        [
+          "Lisbon 1",
+          "Portugal",
+          "23",
+          "840,000"
+        ],
+        [
+          "Boston 2",
+          "USA",
+          "7",
+          "971,000"
+        ],
+        [
+          "Chicago 2",
+          "USA",
+          "14",
+          "202,000"
+        ],
+        [
+          "Denver 2",
+          "USA",
+          "21",
+          "333,000"
+        ],
+        [
+          "Austin 2",
+          "USA",
+          "5",
+          "464,000"
+        ],
+        [
+          "Seattle 2",
+          "USA",
+          "12",
+          "595,000"
+        ],
+        [
+          "Toronto 2",
+          "Canada",
+          "19",
+          "726,000"
+        ],
+        [
+          "Berlin 2",
+          "Germany",
+          "3",
+          "857,000"
+        ],
+        [
+          "Paris 2",
+          "France",
+          "10",
+          "988,000"
+        ],
+        [
+          "Madrid 2",
+          "Spain",
+          "17",
+          "219,000"
+        ],
+        [
+          "Rome 2",
+          "Italy",
+          "24",
+          "350,000"
+        ],
+        [
+          "Tokyo 2",
+          "Japan",
+          "8",
+          "481,000"
+        ],
+        [
+          "Osaka 2",
+          "Japan",
+          "15",
+          "612,000"
+        ],
+        [
+          "Sydney 2",
+          "Australia",
+          "22",
+          "743,000"
+        ],
+        [
+          "Lima 2",
+          "Peru",
+          "6",
+          "874,000"
+        ],
+        [
+          "Bogota 2",
+          "Colombia",
+          "13",
+          "105,000"
+        ],
+        [
+          "Dublin 2",
+          "Ireland",
+          "20",
+          "236,000"
+        ],
+        [
+          "Oslo 2",
+          "Norway",
+          "4",
+          "367,000"
+        ],
+        [
+          "Vienna 2",
+          "Austria",
+          "11",
+          "498,000"
+        ],
+        [
+          "Prague 2",
+          "Czechia",
+          "18",
+          "629,000"
+        ],
+        [
+          "Lisbon 2",
+          "Portugal",
+          "2",
+          "760,000"
+        ],
+        [
+          "Boston 3",
+          "USA",
+          "9",
+          "891,000"
+        ],
+        [
+          "Chicago 3",
+          "USA",
+          "16",
+          "122,000"
+        ],
+        [
+          "Denver 3",
+          "USA",
+          "23",
+          "253,000"
+        ],
+        [
+          "Austin 3",
+          "USA",
+          "7",
+          "384,000"
+        ],
+        [
+          "Seattle 3",
+          "USA",
+          "14",
+          "515,000"
+        ],
+        [
+          "Toronto 3",
+          "Canada",
+          "21",
+          "646,000"
+        ],
+        [
+          "Berlin 3",
+          "Germany",
+          "5",
+          "777,000"
+        ],
+        [
+          "Paris 3",
+          "France",
+          "12",
+          "908,000"
+        ],
+        [
+          "Madrid 3",
+          "Spain",
+          "19",
+          "139,000"
+        ],
+        [
+          "Rome 3",
+          "Italy",
+          "3",
+          "270,000"
+        ],
+        [
+          "Tokyo 3",
+          "Japan",
+          "10",
+          "401,000"
+        ],
+        [
+          "Osaka 3",
+          "Japan",
+          "17",
+          "532,000"
+        ],
+        [
+          "Sydney 3",
+          "Australia",
+          "24",
+          "663,000"
+        ],
+        [
+          "Lima 3",
+          "Peru",
+          "8",
+          "794,000"
+        ],
+        [
+          "Bogota 3",
+          "Colombia",
+          "15",
+          "925,000"
+        ],
+        [
+          "Dublin 3",
+          "Ireland",
+          "22",
+          "156,000"
+        ],
+        [
+          "Oslo 3",
+          "Norway",
+          "6",
+          "287,000"
+        ],
+        [
+          "Vienna 3",
+          "Austria",
+          "13",
+          "418,000"
+        ],
+        [
+          "Prague 3",
+          "Czechia",
+          "20",
+          "549,000"
+        ],
+        [
+          "Lisbon 3",
+          "Portugal",
+          "4",
+          "680,000"
+        ]
+      ],
+      "multiPage": true
+    }
+  ],
+  "annual_report_2024": [
+    {
+      "caption": "Table 1: Revenue by Region (in $ thousands)",
+      "title": "Revenue by Region",
+      "headers": [
+        "Region",
+        "2024",
+        "2023"
+      ],
+      "rows": [
+        [
+          "N. America",
+          "1,098,000",
+          "990,500"
+        ],
+        [
+          "Europe",
+          "790,400",
+          "701,200"
+        ],
+        [
+          "Asia Pacific",
+          "540,300",
+          "498,100"
+        ],
+        [
+          "Latin America",
+          "8,500",
+          "15,900"
+        ],
+        [
+          "Total",
+          "2,437,200",
+          "2,205,700"
+        ]
+      ],
+      "multiPage": false
+    },
+    {
+      "caption": "Table 2: Operating Expenses (in $ millions)",
+      "title": "Operating Expenses",
+      "headers": [
+        "Category",
+        "2024",
+        "2023"
+      ],
+      "rows": [
+        [
+          "Research & development",
+          "380.9",
+          "350.2"
+        ],
+        [
+          "Sales and marketing",
+          "301.1",
+          "280.4"
+        ],
+        [
+          "General and administrative",
+          "115.0",
+          "109.8"
+        ],
+        [
+          "Total operating expenses",
+          "797.0",
+          "740.4"
+        ]
+      ],
+      "multiPage": false
+    },
+    {
+      "caption": "Table 3: Store Locations",
+      "title": "Store Locations",
+      "headers": [
+        "City",
+        "Country",
+        "Stores",
+        "Floor area (sq ft)"
+      ],
+      "rows": [
+        [
+          "Boston 1",
+          "USA",
+          "7",
+          "185,000"
+        ],
+        [
+          "Chicago 1",
+          "USA",
+          "14",
+          "316,000"
+        ],
+        [
+          "Denver 1",
+          "USA",
+          "21",
+          "447,000"
+        ],
+        [
+          "Austin 1",
+          "USA",
+          "5",
+          "578,000"
+        ],
+        [
+          "Seattle 1",
+          "USA",
+          "12",
+          "709,000"
+        ],
+        [
+          "Toronto 1",
+          "Canada",
+          "19",
+          "840,000"
+        ],
+        [
+          "Berlin 1",
+          "Germany",
+          "3",
+          "971,000"
+        ],
+        [
+          "Paris 1",
+          "France",
+          "10",
+          "202,000"
+        ],
+        [
+          "Madrid 1",
+          "Spain",
+          "17",
+          "333,000"
+        ],
+        [
+          "Rome 1",
+          "Italy",
+          "24",
+          "464,000"
+        ],
+        [
+          "Tokyo 1",
+          "Japan",
+          "8",
+          "595,000"
+        ],
+        [
+          "Osaka 1",
+          "Japan",
+          "15",
+          "726,000"
+        ],
+        [
+          "Sydney 1",
+          "Australia",
+          "22",
+          "857,000"
+        ],
+        [
+          "Lima 1",
+          "Peru",
+          "6",
+          "988,000"
+        ],
+        [
+          "Bogota 1",
+          "Colombia",
+          "13",
+          "219,000"
+        ],
+        [
+          "Dublin 1",
+          "Ireland",
+          "20",
+          "350,000"
+        ],
+        [
+          "Oslo 1",
+          "Norway",
+          "4",
+          "481,000"
+        ],
+        [
+          "Vienna 1",
+          "Austria",
+          "11",
+          "612,000"
+        ],
+        [
+          "Prague 1",
+          "Czechia",
+          "18",
+          "743,000"
+        ],
+        [
+          "Lisbon 1",
+          "Portugal",
+          "2",
+          "874,000"
+        ],
+        [
+          "Boston 2",
+          "USA",
+          "9",
+          "105,000"
+        ],
+        [
+          "Chicago 2",
+          "USA",
+          "16",
+          "236,000"
+        ],
+        [
+          "Denver 2",
+          "USA",
+          "23",
+          "367,000"
+        ],
+        [
+          "Austin 2",
+          "USA",
+          "7",
+          "498,000"
+        ],
+        [
+          "Seattle 2",
+          "USA",
+          "14",
+          "629,000"
+        ],
+        [
+          "Toronto 2",
+          "Canada",
+          "21",
+          "760,000"
+        ],
+        [
+          "Berlin 2",
+          "Germany",
+          "5",
+          "891,000"
+        ],
+        [
+          "Paris 2",
+          "France",
+          "12",
+          "122,000"
+        ],
+        [
+          "Madrid 2",
+          "Spain",
+          "19",
+          "253,000"
+        ],
+        [
+          "Rome 2",
+          "Italy",
+          "3",
+          "384,000"
+        ],
+        [
+          "Tokyo 2",
+          "Japan",
+          "10",
+          "515,000"
+        ],
+        [
+          "Osaka 2",
+          "Japan",
+          "17",
+          "646,000"
+        ],
+        [
+          "Sydney 2",
+          "Australia",
+          "24",
+          "777,000"
+        ],
+        [
+          "Lima 2",
+          "Peru",
+          "8",
+          "908,000"
+        ],
+        [
+          "Bogota 2",
+          "Colombia",
+          "15",
+          "139,000"
+        ],
+        [
+          "Dublin 2",
+          "Ireland",
+          "22",
+          "270,000"
+        ],
+        [
+          "Oslo 2",
+          "Norway",
+          "6",
+          "401,000"
+        ],
+        [
+          "Vienna 2",
+          "Austria",
+          "13",
+          "532,000"
+        ],
+        [
+          "Prague 2",
+          "Czechia",
+          "20",
+          "663,000"
+        ],
+        [
+          "Lisbon 2",
+          "Portugal",
+          "4",
+          "794,000"
+        ],
+        [
+          "Boston 3",
+          "USA",
+          "11",
+          "925,000"
+        ],
+        [
+          "Chicago 3",
+          "USA",
+          "18",
+          "156,000"
+        ],
+        [
+          "Denver 3",
+          "USA",
+          "2",
+          "287,000"
+        ],
+        [
+          "Austin 3",
+          "USA",
+          "9",
+          "418,000"
+        ],
+        [
+          "Seattle 3",
+          "USA",
+          "16",
+          "549,000"
+        ],
+        [
+          "Toronto 3",
+          "Canada",
+          "23",
+          "680,000"
+        ],
+        [
+          "Berlin 3",
+          "Germany",
+          "7",
+          "811,000"
+        ],
+        [
+          "Paris 3",
+          "France",
+          "14",
+          "942,000"
+        ],
+        [
+          "Madrid 3",
+          "Spain",
+          "21",
+          "173,000"
+        ],
+        [
+          "Rome 3",
+          "Italy",
+          "5",
+          "304,000"
+        ],
+        [
+          "Tokyo 3",
+          "Japan",
+          "12",
+          "435,000"
+        ],
+        [
+          "Osaka 3",
+          "Japan",
+          "19",
+          "566,000"
+        ],
+        [
+          "Sydney 3",
+          "Australia",
+          "3",
+          "697,000"
+        ],
+        [
+          "Lima 3",
+          "Peru",
+          "10",
+          "828,000"
+        ],
+        [
+          "Bogota 3",
+          "Colombia",
+          "17",
+          "959,000"
+        ],
+        [
+          "Dublin 3",
+          "Ireland",
+          "24",
+          "190,000"
+        ],
+        [
+          "Oslo 3",
+          "Norway",
+          "8",
+          "321,000"
+        ],
+        [
+          "Vienna 3",
+          "Austria",
+          "15",
+          "452,000"
+        ],
+        [
+          "Prague 3",
+          "Czechia",
+          "22",
+          "583,000"
+        ],
+        [
+          "Lisbon 3",
+          "Portugal",
+          "6",
+          "714,000"
+        ]
+      ],
+      "multiPage": true
+    }
+  ],
+  "research_paper": [
+    {
+      "caption": "Table 1: Retrieval accuracy by method",
+      "title": "Retrieval accuracy by method",
+      "headers": [
+        "Method",
+        "Precision",
+        "Recall",
+        "F1"
+      ],
+      "rows": [
+        [
+          "BM25",
+          "61.2%",
+          "55.0%",
+          "57.9%"
+        ],
+        [
+          "Dense",
+          "68.4%",
+          "63.1%",
+          "65.6%"
+        ],
+        [
+          "Hybrid",
+          "74.9%",
+          "70.2%",
+          "72.5%"
+        ]
+      ],
+      "multiPage": false
+    },
+    {
+      "caption": "Table 2: Qualitative comparison",
+      "title": "Qualitative comparison",
+      "headers": [
+        "Aspect",
+        "Sparse",
+        "Dense"
+      ],
+      "rows": [
+        [
+          "Index size",
+          "Small",
+          "Large"
+        ],
+        [
+          "Handles synonyms",
+          "No",
+          "Yes"
+        ],
+        [
+          "Exact match",
+          "Strong",
+          "Weak"
+        ]
+      ],
+      "multiPage": false
+    }
+  ]
+}

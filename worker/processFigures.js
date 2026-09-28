@@ -13,6 +13,7 @@ import pLimit from "p-limit";
 import { extractPdfFigures, extractDocxFigures, filterAndDedupFigures } from "./extractFigures.js";
 import { getOpenAIForDocument } from "./openai.js";
 import { upsertFigureChunk } from "../src/lib/figureChunk.js";
+import { enqueueTableJob } from "./processTables.js";
 
 const S3_BUCKET = process.env.S3_BUCKET;
 
@@ -161,6 +162,14 @@ export async function processFigureJob(job) {
         }
       })
     ));
+
+    // Tables inside the figures (a pasted picture of a table) need the
+    // captions/OCR above to decide which are worth a vision call.
+    try {
+      await enqueueTableJob({ type: "tables-figures", docId });
+    } catch (err) {
+      console.error(`❌ Failed to enqueue figure table scan (doc ${docId}): ${err.message}`);
+    }
 
     console.log(`✅ Figures job complete: ${docId} (${figures.length} figure(s))`);
   } catch (err) {

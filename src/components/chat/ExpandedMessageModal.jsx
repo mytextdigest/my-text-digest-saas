@@ -6,6 +6,7 @@ import { Bot, User, X, Sparkles } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/Card"
 import MessageActions from "@/components/chat/MessageActions"
 import InsightView from "@/components/insights/InsightView"
+import DerivedTableCard, { TableCitationChips } from "@/components/tables/DerivedTableCard"
 import { cn } from "@/lib/utils"
 
 export default function ExpandedMessageModal({
@@ -46,7 +47,7 @@ export default function ExpandedMessageModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ duration: 0.25 }}
-            className="relative z-10 w-full max-w-3xl"
+            className={cn("relative z-10 w-full", message.derivedTableId ? "max-w-5xl" : "max-w-3xl")}
           >
 
             <Card className="shadow-2xl border-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur">
@@ -193,6 +194,12 @@ export default function ExpandedMessageModal({
                     >
                       {message.content}
                     </div>
+                  )}
+
+                  {message.derivedTableId ? (
+                    <DerivedTableCard derivedTableId={message.derivedTableId} />
+                  ) : (
+                    <TableCitationChips citations={message.tableCitations} />
                   )}
 
                 </div>

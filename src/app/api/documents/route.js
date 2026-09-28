@@ -40,6 +40,7 @@ export async function GET(req) {
         status: true,
         content: true,
         lastError: true,
+        tableExtractionLog: { select: { tablesFound: true } },
         topicDocument: {
           select: {
             confidence: true,
@@ -58,6 +59,8 @@ export async function GET(req) {
       topicName:       d.topicDocument?.topic?.name ?? null,
       topicConfidence: d.topicDocument?.confidence ?? null,
       topicDocument:   undefined, // strip the nested object
+      tablesFound:     d.tableExtractionLog?.tablesFound ?? 0,
+      tableExtractionLog: undefined,
     }));
 
     return NextResponse.json(formatted);

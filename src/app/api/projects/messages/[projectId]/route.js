@@ -43,6 +43,8 @@ export async function GET(req, { params }) {
       externalKnowledgeQuery: m.externalKnowledgeQuery || null,
       comparisonId: m.comparisonId || null,
       insight: m.insightJson || null,
+      derivedTableId: m.derivedTableId || null,
+      tableCitations: m.tableCitations || [],
     }));
 
     return NextResponse.json({ success: true, messages: mapped });

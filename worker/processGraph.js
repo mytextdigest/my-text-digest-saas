@@ -17,6 +17,7 @@ import { extractEntitiesFromChunk } from "../src/lib/graph/extractor.js";
 import { resolveEntitiesBatch, buildCache } from "../src/lib/graph/resolver.js";
 import { synthesizeDocumentInsights } from "../src/lib/graph/insights.js";
 import { getOpenAIForDocument } from "../src/lib/openaiForDocument.js";
+import { writeTableFactsToGraph } from "../src/lib/tables/toFacts.js";
 
 const prisma = new PrismaClient();
 
@@ -50,8 +51,10 @@ export async function processGraphJob(job) {
 
     console.log(`🕸️  GRAPH JOB: ${documentId}`);
 
+    // Table chunks are excluded: their numbers go in as exact metric facts
+    // via tables/toFacts.js below instead of being re-read by the LLM.
     const allChunks = await prisma.chunk.findMany({
-      where: { documentId },
+      where: { documentId, tableId: null },
       orderBy: { chunkIndex: "asc" },
     });
 
@@ -169,6 +172,17 @@ export async function processGraphJob(job) {
         });
         relationshipsCreated += 1;
       }
+    }
+
+    // Exact metric facts from the document's extracted tables (FR-33) — no
+    // LLM involved, values copied from the table cells.
+    try {
+      const { factsCreated, factsMatched } = await writeTableFactsToGraph({ prisma, docId: documentId, projectId });
+      entitiesCreated += factsCreated;
+      entitiesMatched += factsMatched;
+      if (factsCreated || factsMatched) console.log(`   📊 [graph:${documentId}] Table facts: ${factsCreated} new, ${factsMatched} matched`);
+    } catch (err) {
+      console.error(`   ❌ [graph:${documentId}] Table facts failed:`, err.message || err);
     }
 
     // One extra pass over this document's full (already-committed) entity/

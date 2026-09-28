@@ -2,17 +2,8 @@
 // OCR pipeline for scanned PDFs using pdfjs-dist + pngjs + tesseract.js
 // No native binaries: no tesseract binary, no poppler, no canvas, no cairo.
 
-import { createRequire } from "module";
 import Tesseract from "tesseract.js";
-import { pixelDataToPngBuffer } from "./imageUtils.js";
-
-const require = createRequire(import.meta.url);
-const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js");
-
-// In Node.js, pdfjs-dist automatically uses a fake (in-process) worker.
-// No workerSrc config needed — isWorkerDisabled is set to true by pdfjs for Node.js.
-
-const OPS = pdfjsLib.OPS;
+import { forEachPdfPageImage } from "../src/lib/tables/vision/pageImages.js";
 
 // OCR concurrency: 2 pages at a time to keep memory/CPU stable on EC2
 const CONCURRENCY = 2;
@@ -41,73 +32,14 @@ function extractJpegsFromBuffer(pdfBuffer) {
 
 // -------------------------------------------------------------------
 // Primary image extraction via pdfjs-dist operator list + page.objs
-// After getOperatorList() resolves, image pixel data is available in
-// page.objs (decoded to RGBA/RGB/1bpp by the pdfjs inline worker).
+// (shared with table vision: src/lib/tables/vision/pageImages.js).
 // No canvas or rendering step is required.
 // -------------------------------------------------------------------
 async function extractPageImages(pdfBuffer) {
-  const pdfDoc = await pdfjsLib.getDocument({
-    data: new Uint8Array(pdfBuffer),
-    verbosity: 0,
-    disableFontFace: true,
-  }).promise;
-
-  const numPages = pdfDoc.numPages;
   const pageImages = [];
-
-  const imageOps = new Set([
-    OPS.paintImageXObject,
-    OPS.paintJpegXObject,
-    OPS.paintImageXObjectRepeat,
-  ]);
-
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    const page = await pdfDoc.getPage(pageNum);
-    try {
-      // getOperatorList() triggers full page processing including image decoding.
-      // pdfjs resolves all image XObjects into page.objs before lastChunk arrives.
-      const ops = await page.getOperatorList();
-
-      // Collect image XObject names referenced on this page
-      const imgNames = new Set();
-      for (let i = 0; i < ops.fnArray.length; i++) {
-        if (imageOps.has(ops.fnArray[i])) imgNames.add(ops.argsArray[i][0]);
-      }
-
-      // Get the largest image (page scan) — scanned PDFs have one image per page
-      let bestData = null;
-      let bestSize = 0;
-
-      for (const name of imgNames) {
-        let imgData = null;
-        // page.objs holds page-specific images; commonObjs holds shared resources
-        if (page.objs.has(name)) {
-          imgData = page.objs.get(name);
-        } else if (page.commonObjs.has(name)) {
-          imgData = page.commonObjs.get(name);
-        }
-
-        if (imgData?.data && imgData.width && imgData.height) {
-          const size = imgData.width * imgData.height;
-          if (size > bestSize) {
-            bestSize = size;
-            bestData = imgData;
-          }
-        }
-      }
-
-      if (bestData) {
-        pageImages.push({ pageNum, buffer: pixelDataToPngBuffer(bestData) });
-      } else if (imgNames.size > 0) {
-        console.warn(`⚠️  Image data not resolved for page ${pageNum} (names: ${[...imgNames].join(', ')})`);
-      }
-    } catch (err) {
-      console.warn(`⚠️  Could not extract image from page ${pageNum}: ${err.message}`);
-    }
-    page.cleanup();
-  }
-
-  await pdfDoc.destroy();
+  await forEachPdfPageImage(pdfBuffer, null, (pageNum, buffer) => {
+    if (buffer) pageImages.push({ pageNum, buffer });
+  });
   return pageImages;
 }
 

@@ -6,14 +6,15 @@
     "name": "My Text Digest",
     "email": "mytextdigest@gmail.com"
   },
-  "description": "My Text Digest — SaaS for document summarization and Q&A",
+  "description": "My Text Digest \u2014 SaaS for document summarization and Q&A",
   "scripts": {
     "dev": "next dev",
     "dev:worker": "node scripts/dev-worker.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:tables": "node --test \"src/lib/tables/__tests__/*.test.js\""
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -29,6 +30,7 @@
     "@react-pdf/renderer": "^4.9.0",
     "@resvg/resvg-wasm": "^2.6.2",
     "@smithy/node-http-handler": "^4.4.5",
+    "@xmldom/xmldom": "^0.8.11",
     "@xyflow/react": "^12.11.6",
     "bcrypt": "^6.0.0",
     "clsx": "^2.1.1",

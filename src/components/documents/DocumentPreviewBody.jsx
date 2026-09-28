@@ -19,6 +19,7 @@ export default function DocumentPreviewBody({
   onScroll,
   onPdfPageChange,
   onPdfTotalPages,
+  pdfJumpTo,
 }) {
   if (!doc) return null;
 
@@ -37,7 +38,7 @@ export default function DocumentPreviewBody({
   if (ext === 'pdf') {
     return (
       <div className="w-full h-full bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <PdfViewer fileUrl={doc.fileUrl} onPageChange={onPdfPageChange} onTotalPages={onPdfTotalPages} />
+        <PdfViewer fileUrl={doc.fileUrl} onPageChange={onPdfPageChange} onTotalPages={onPdfTotalPages} jumpTo={pdfJumpTo} />
       </div>
     );
   }

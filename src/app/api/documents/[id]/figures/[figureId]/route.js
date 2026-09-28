@@ -34,6 +34,9 @@ export async function DELETE(req, { params }) {
     if (figure.chunkId) {
       await tx.chunk.deleteMany({ where: { id: figure.chunkId } });
     }
+    // A table read from this figure stays (as on desktop); it just loses
+    // the link back to the picture.
+    await tx.documentTable.updateMany({ where: { figureId: figure.id }, data: { figureId: null } });
     await tx.figure.delete({ where: { id: figure.id } });
   });
 

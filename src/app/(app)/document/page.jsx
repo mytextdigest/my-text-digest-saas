@@ -7,7 +7,7 @@ import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon, Presentation, Network } from 'lucide-react';
+import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon, Presentation, Network, Table } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
 import { cn } from '@/lib/utils';
@@ -18,6 +18,9 @@ import ChartMessage from "@/components/chat/ChartMessage";
 import InsightView from "@/components/insights/InsightView";
 import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
 import FiguresGallery from "@/components/documents/FiguresGallery";
+import TablesView from "@/components/tables/TablesView";
+import { TableCitationChips } from "@/components/tables/DerivedTableCard";
+import tablesApi from "@/lib/tablesApi";
 import GraphView from "@/components/documents/GraphView";
 import SlidesView from "@/components/slides/SlidesView";
 import { useChatEngine } from "@/components/chat/useChatEngine";
@@ -50,6 +53,11 @@ function DocumentContent() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
+  // Automatic Table Extraction: count for the tab badge, the table a
+  // question is pinned to ("Ask about this table"), and PDF page jumps.
+  const [tablesCount, setTablesCount] = useState(0);
+  const [pinnedTable, setPinnedTable] = useState(null);
+  const [pdfJump, setPdfJump] = useState(null);
 
   const [docxHtml, setDocxHtml] = useState(null);
   const [spreadsheetData, setSpreadsheetData] = useState(null);
@@ -78,6 +86,7 @@ function DocumentContent() {
   const isSpreadsheet = ['csv', 'xlsx', 'xls'].includes(ext);
   const noGuideTab = ['jpg','jpeg','png','webp','gif','bmp','xlsx','xls','csv'].includes(ext);
   const showFiguresTab = ['pdf','docx'].includes(ext);
+  const showTablesTab = ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
 
   // Derive a per-sheet breakdown from chunk metadata stored during ingestion
   // (workbookName, sheetName, rowRange, columnHeaders — see worker/extractSpreadsheet.js)
@@ -170,9 +179,31 @@ function DocumentContent() {
   }, [detectedPage, pagesRead, isLoadingPageInsight, totalPages, activeTab, handleMarkPageRead]);
 
   useEffect(() => {
+    if (!doc) return;
     if (noGuideTab && activeTab === 'guide') setActiveTab('chat');
     if (!showFiguresTab && activeTab === 'figures') setActiveTab('chat');
-  }, [noGuideTab, showFiguresTab, activeTab]);
+    if (!showTablesTab && activeTab === 'tables') setActiveTab('chat');
+  }, [doc, noGuideTab, showFiguresTab, showTablesTab, activeTab]);
+
+  // Tab badge: current count, kept fresh while extraction runs in the background.
+  useEffect(() => {
+    if (!id || !showTablesTab) return;
+    const refresh = () => tablesApi.listTables(id).then((res) => res?.success && setTablesCount(res.tables.length));
+    refresh();
+    const off = tablesApi.onTableExtractionUpdate(id, () => refresh());
+    return () => off?.();
+  }, [id, showTablesTab]);
+
+  const handleAskAboutTable = useCallback((table) => {
+    setPinnedTable({ id: table.id, title: table.title || `Table ${table.table_index + 1}` });
+    setActiveTab('chat');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const handleShowTableInDocument = useCallback((table) => {
+    if (table.page_start == null) return;
+    setPdfJump({ page: table.page_start, box: table.raw?.provenance?.bbox || null, nonce: Date.now() });
+  }, []);
 
   const handleDocPageChange = useCallback((pageNum) => {
     setDetectedPage(pageNum);
@@ -376,7 +407,8 @@ function DocumentContent() {
               timestamp: new Date(m.createdAt || m.created_at),
               chart: m.chartData || null,
               externalKnowledgeQuery: m.externalKnowledgeQuery || null,
-              insight: m.insightJson || null
+              insight: m.insightJson || null,
+              tableCitations: m.tableCitations || []
             }));
   
             // preserve system welcome message
@@ -546,7 +578,8 @@ function DocumentContent() {
         timestamp: new Date(),
         chart: res.chart || null,
         externalKnowledgeQuery: res.externalKnowledgeQuery || null,
-        insight: res.insight || null
+        insight: res.insight || null,
+        tableCitations: res.tableCitations || []
       }
     ]);
 
@@ -573,9 +606,9 @@ function DocumentContent() {
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       signal,
-      body: JSON.stringify({ question, conversationId, requestId })
+      body: JSON.stringify({ question, conversationId, requestId, pinnedTableId: pinnedTable?.id ?? null })
     }).then(r => r.json());
-  }, [id, conversationId]);
+  }, [id, conversationId, pinnedTable]);
 
   const {
     isTyping,
@@ -744,6 +777,7 @@ function DocumentContent() {
         onScroll={handleDocScroll}
         onPdfPageChange={handleDocPageChange}
         onPdfTotalPages={setPdfTotalPages}
+        pdfJumpTo={pdfJump}
       />
     );
   };
@@ -911,6 +945,30 @@ function DocumentContent() {
                 <span>Figures</span>
               </Button>
             )}
+            {showTablesTab && (
+              <Button
+                variant={activeTab === 'tables' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('tables')}
+                className={cn(
+                  "flex items-center space-x-2",
+                  activeTab === 'tables'
+                    ? "text-white dark:text-gray-200"
+                    : "text-gray-600 dark:text-gray-400"
+                )}
+              >
+                <Table className="h-4 w-4" />
+                <span>Tables</span>
+                {tablesCount > 0 && (
+                  <span className={cn(
+                    "text-[10px] px-1.5 rounded-full",
+                    activeTab === 'tables' ? "bg-white/20" : "bg-gray-200 dark:bg-gray-700"
+                  )}>
+                    {tablesCount}
+                  </span>
+                )}
+              </Button>
+            )}
             <Button
               variant={activeTab === 'graph' ? 'default' : 'ghost'}
               size="sm"
@@ -1055,6 +1113,16 @@ function DocumentContent() {
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
               <FiguresGallery documentId={id} />
             </div>
+          ) : activeTab === 'tables' ? (
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
+              <TablesView
+                docId={id}
+                initialTableId={searchParams.get('table')}
+                onAsk={handleAskAboutTable}
+                onShowInDocument={ext === 'pdf' ? handleShowTableInDocument : null}
+                onCountChange={setTablesCount}
+              />
+            </div>
           ) : activeTab === 'graph' ? (
             <div className="relative flex-1 h-full bg-gray-50 dark:bg-gray-900/50">
               <GraphView docId={id} />
@@ -1129,6 +1197,10 @@ function DocumentContent() {
                         onExpand={() => openExpanded(message)}
                         align={message.role === 'user' ? "right" : "left"}
                       />
+
+                      {message.role === 'assistant' && (
+                        <TableCitationChips citations={message.tableCitations} />
+                      )}
 
                       {message.role === 'assistant' && message.chart && (
                         <ChartMessage spec={message.chart} />
@@ -1206,6 +1278,13 @@ function DocumentContent() {
 
               {/* Input Area - Fixed at bottom */}
               <form onSubmit={handleAsk} className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700">
+                {pinnedTable && (
+                  <div className="mb-2 flex items-center gap-1.5 text-xs text-primary-700 dark:text-primary-300">
+                    <Table className="h-3.5 w-3.5" />
+                    <span>Asking about <strong>{pinnedTable.title}</strong> — the whole table is included in your questions.</span>
+                    <button type="button" onClick={() => setPinnedTable(null)} className="ml-1 text-gray-400 hover:text-gray-700" title="Stop including this table">✕</button>
+                  </div>
+                )}
                 <div className="flex space-x-2">
                   <Input
                     ref={inputRef}

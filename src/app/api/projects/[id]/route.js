@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
+import { removeTablesForDocument } from "@/lib/tables/cleanup";
 import { removeComparisonsForDocument } from "@/lib/compareCleanup";
 
 export async function GET(req, { params }) {
@@ -122,6 +123,9 @@ export async function DELETE(req, { params }) {
           // does this per-document, but a project delete goes straight to
           // deleteMany on documents below, bypassing that route entirely.
           await removeComparisonsForDocument(prismaTx, docId);
+          // Extracted tables, their chunks and the derived tables built
+          // from them (DocumentTable/TableExtractionLog reference Document).
+          await removeTablesForDocument(prismaTx, docId);
         }
 
         // 2) document conversations for those documents
@@ -168,6 +172,9 @@ export async function DELETE(req, { params }) {
           where: { id: { in: projConvoIds } },
         });
       }
+
+      // Project-level comparison tables (Project Tables view / chat).
+      await prismaTx.derivedTable.deleteMany({ where: { projectId } });
 
       // 4) delete the project itself
       await prismaTx.project.delete({

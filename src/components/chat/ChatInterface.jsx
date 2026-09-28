@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network, GitCompare } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network, GitCompare, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -14,6 +14,8 @@ import ChartMessage from './ChartMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
 import ProjectGraphView from '@/components/graph/ProjectGraphView';
 import ComparisonsView from '@/components/documents/ComparisonsView';
+import ProjectTablesView from '@/components/tables/ProjectTablesView';
+import DerivedTableCard, { TableCitationChips } from '@/components/tables/DerivedTableCard';
 import InsightView from '@/components/insights/InsightView';
 import { useChatEngine } from './useChatEngine';
 import {
@@ -50,7 +52,7 @@ const renderMessageContent = (content, citations, onCitationClick) => {
 
 const ChatInterface = ({ className, projectId }) => {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph' | 'comparisons'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph' | 'comparisons' | 'tables'
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isClient, setIsClient] = useState(false);
@@ -96,7 +98,9 @@ const ChatInterface = ({ className, projectId }) => {
               citations: m.citations || null,
               externalKnowledgeQuery: m.externalKnowledgeQuery || null,
               comparisonId: m.comparisonId || null,
-              insight: m.insight || null
+              insight: m.insight || null,
+              derivedTableId: m.derivedTableId || null,
+              tableCitations: m.tableCitations || []
             }))
           );
         }
@@ -127,7 +131,9 @@ const ChatInterface = ({ className, projectId }) => {
         citations: res.citations || null,
         externalKnowledgeQuery: res.externalKnowledgeQuery || null,
         comparisonId: res.comparisonId || null,
-        insight: res.insight || null
+        insight: res.insight || null,
+        derivedTableId: res.derivedTableId || null,
+        tableCitations: res.tableCitations || []
       }
     ]);
   }, []);
@@ -333,6 +339,20 @@ const ChatInterface = ({ className, projectId }) => {
             <GitCompare className="h-4 w-4" />
             <span>Comparisons</span>
           </Button>
+          <Button
+            variant={activeTab === 'tables' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('tables')}
+            className={cn(
+              "flex items-center space-x-2",
+              activeTab === 'tables'
+                ? "text-white dark:text-gray-200"
+                : "text-gray-600 dark:text-gray-400"
+            )}
+          >
+            <TableIcon className="h-4 w-4" />
+            <span>Tables</span>
+          </Button>
         </div>
 
         {/* Left Side - Title and Subtitle */}
@@ -380,6 +400,10 @@ const ChatInterface = ({ className, projectId }) => {
           <div className="relative w-full h-full overflow-y-auto">
             <ComparisonsView projectId={projectId} />
           </div>
+        ) : activeTab === 'tables' ? (
+          <div className="relative w-full h-full p-4">
+            <ProjectTablesView projectId={projectId} className="h-full" />
+          </div>
         ) : (
           <>
         {/* Messages Area */}
@@ -423,7 +447,8 @@ const ChatInterface = ({ className, projectId }) => {
                     {/* Message Bubble */}
                     <div
                       className={cn(
-                        "flex flex-col max-w-[85%]",
+                        "flex flex-col",
+                        message.derivedTableId ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
                         message.type === 'user' ? 'items-end' : 'items-start'
                       )}
                     >
@@ -452,6 +477,14 @@ const ChatInterface = ({ className, projectId }) => {
                         onExpand={() => openExpanded(message)}
                         align={message.type === 'user' ? "right" : "left"}
                       />
+
+                      {message.type === 'assistant' && message.derivedTableId && (
+                        <DerivedTableCard derivedTableId={message.derivedTableId} />
+                      )}
+
+                      {message.type === 'assistant' && !message.derivedTableId && (
+                        <TableCitationChips citations={message.tableCitations} />
+                      )}
 
                       {message.type === 'assistant' && message.chart && (
                         <ChartMessage spec={message.chart} />
