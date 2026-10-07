@@ -24,6 +24,8 @@ import tablesApi from "@/lib/tablesApi";
 import GraphView from "@/components/documents/GraphView";
 import SlidesView from "@/components/slides/SlidesView";
 import { useChatEngine } from "@/components/chat/useChatEngine";
+import { MessageImageThumbs, GeneratedImage, ImageGeneratingPlaceholder, ComposerAttachments, AttachButton, DropOverlay, ChatImageViewer } from "@/components/chat/ChatImages";
+import { useComposerAttachments, useChatImageActions } from "@/components/chat/useChatImages";
 import {
   GeneralKnowledgePermissionPrompt,
   GeneralKnowledgeProgressChip,
@@ -400,16 +402,26 @@ function DocumentContent() {
           }).then(r => r.json());
   
           if (msgsRes?.success) {
-            const mapped = msgsRes.messages.map((m) => ({
+            let mapped = msgsRes.messages.map((m) => ({
               id: m.id,
               role: m.role,
               content: m.content,
+              status: m.status,
               timestamp: new Date(m.createdAt || m.created_at),
               chart: m.chartData || null,
               externalKnowledgeQuery: m.externalKnowledgeQuery || null,
               insight: m.insightJson || null,
-              tableCitations: m.tableCitations || []
+              tableCitations: m.tableCitations || [],
+              attachments: m.attachments || []
             }));
+
+            // An image still generating resumes its placeholder; the result
+            // replaces the message when it lands.
+            const last = msgsRes.messages[msgsRes.messages.length - 1];
+            if (last?.role === "assistant" && last.status === "generating") {
+              mapped = mapped.slice(0, -1);
+              resumeImageJob({ kind: "document", messageId: last.id, leadIn: last.content, progress: last.imageProgress });
+            }
   
             // preserve system welcome message
             setChat((prev) => {
@@ -568,25 +580,25 @@ function DocumentContent() {
 
 
   //  --- Asking document queries ----
+  const mapAskResult = useCallback((res) => ({
+    id: `assistant-${Date.now()}-${Math.random()}`,
+    role: "assistant",
+    content: res.answer,
+    timestamp: new Date(),
+    chart: res.chart || null,
+    externalKnowledgeQuery: res.externalKnowledgeQuery || null,
+    insight: res.insight || null,
+    tableCitations: res.tableCitations || [],
+    attachments: res.attachments || []
+  }), []);
+
   const handleAskResult = useCallback((res) => {
-    setChat(prev => [
-      ...prev,
-      {
-        id: `assistant-${Date.now()}-${Math.random()}`,
-        role: "assistant",
-        content: res.answer,
-        timestamp: new Date(),
-        chart: res.chart || null,
-        externalKnowledgeQuery: res.externalKnowledgeQuery || null,
-        insight: res.insight || null,
-        tableCitations: res.tableCitations || []
-      }
-    ]);
+    setChat(prev => [...prev, mapAskResult(res)]);
 
     if (res.conversationId && res.conversationId !== conversationId) {
       setConversationId(res.conversationId);
     }
-  }, [conversationId]);
+  }, [conversationId, mapAskResult]);
 
   const handleAskError = useCallback((res) => {
     setChat(prev => [
@@ -600,13 +612,13 @@ function DocumentContent() {
     ]);
   }, []);
 
-  const ask = useCallback((question, requestId, signal) => {
+  const ask = useCallback((question, requestId, signal, { attachments = [] } = {}) => {
     return fetch(`/api/documents/${id}/ask`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       signal,
-      body: JSON.stringify({ question, conversationId, requestId, pinnedTableId: pinnedTable?.id ?? null })
+      body: JSON.stringify({ question, conversationId, requestId, pinnedTableId: pinnedTable?.id ?? null, attachmentIds: attachments.map(a => a.id) })
     }).then(r => r.json());
   }, [id, conversationId, pinnedTable]);
 
@@ -617,24 +629,34 @@ function DocumentContent() {
     sendMessage,
     respondToConfirmation,
     cancelRequest,
+    resumeImageJob,
   } = useChatEngine({ ask, onResult: handleAskResult, onError: handleAskError });
+
+  // Image attachments + generated images (shared with project chat).
+  // "Save to project" saves into the project this document belongs to.
+  const composer = useComposerAttachments({ messageTable: 'document', disabled: isTyping });
+  const imageActions = useChatImageActions({ projectId: doc?.projectId, setMessages: setChat, mapAskResult });
+  const canAsk = !composer.isUploading && (question.trim().length > 0 || composer.readyAttachments.length > 0);
 
   const handleAsk = (e) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!canAsk) return;
 
+    const attachments = composer.readyAttachments;
     const userMessage = {
       id: `user-${Date.now()}-${Math.random()}`,
       role: "user",
       content: question,
+      attachments,
       timestamp: new Date()
     };
     setChat(prev => [...prev, userMessage]);
 
     const q = question;
     setQuestion("");
+    composer.clear();
 
-    sendMessage(q);
+    sendMessage(q, { attachments });
   };
 
   const handleCancelRequest = () => cancelRequest();
@@ -1132,7 +1154,8 @@ function DocumentContent() {
               <SlidesView docId={id} />
             </div>
           ) : activeTab === 'chat' ? (
-            <div className="chat-container">
+            <div className="chat-container relative" {...composer.dropHandlers}>
+              <DropOverlay visible={composer.isDraggingFiles} />
               <div className="chat-messages-area p-4 space-y-4 bg-gray-50 dark:bg-gray-900/50 chat-scrollbar">
                 {chat.map((message) => (
                   <motion.div
@@ -1168,12 +1191,22 @@ function DocumentContent() {
                     {/* Message Bubble */}
                     <div
                       className={cn(
-                        "flex flex-col max-w-[85%]",
+                        "flex flex-col",
+                        message.role === 'assistant' && message.attachments?.length
+                          ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
                         message.role === 'user' ? 'items-end' : 'items-start'
                       )}
                     >
 
+                      {message.role === 'user' && (
+                        <MessageImageThumbs
+                          images={message.attachments}
+                          onOpen={(i) => imageActions.openViewer(message.attachments, i)}
+                        />
+                      )}
+
                       {/* MESSAGE BUBBLE */}
+                      {(message.role !== 'user' || message.content) && (
                       <div
                         className={cn(
                           "rounded-2xl px-4 py-3 overflow-hidden",
@@ -1190,13 +1223,20 @@ function DocumentContent() {
                           </p>
                         )}
                       </div>
+                      )}
+
+                      {message.role === 'assistant' && message.attachments?.map((img) => (
+                        <GeneratedImage key={img.id} {...imageActions.generatedImageProps(img)} />
+                      ))}
 
                       {/* ACTION BUTTONS BELOW */}
-                      <MessageActions
-                        content={message.content}
-                        onExpand={() => openExpanded(message)}
-                        align={message.role === 'user' ? "right" : "left"}
-                      />
+                      {message.content && (
+                        <MessageActions
+                          content={message.content}
+                          onExpand={() => openExpanded(message)}
+                          align={message.role === 'user' ? "right" : "left"}
+                        />
+                      )}
 
                       {message.role === 'assistant' && (
                         <TableCitationChips citations={message.tableCitations} />
@@ -1238,6 +1278,15 @@ function DocumentContent() {
                   >
                     {progress?.stage === 'consulting_general_knowledge' ? (
                       <GeneralKnowledgeProgressChip />
+                    ) : progress?.stage === 'generating_image' ? (
+                      <div className="flex flex-col items-start max-w-[85%] w-full">
+                        {progress.leadIn && (
+                          <div className="rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">{progress.leadIn}</p>
+                          </div>
+                        )}
+                        <ImageGeneratingPlaceholder status={progress.status} />
+                      </div>
                     ) : (
                       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
                         <div className="flex space-x-1">
@@ -1285,12 +1334,15 @@ function DocumentContent() {
                     <button type="button" onClick={() => setPinnedTable(null)} className="ml-1 text-gray-400 hover:text-gray-700" title="Stop including this table">✕</button>
                   </div>
                 )}
-                <div className="flex space-x-2">
+                <ComposerAttachments items={composer.items} onRemove={composer.removeItem} />
+                <div className="flex items-center space-x-2">
+                  <AttachButton composer={composer} disabled={isTyping} className="shrink-0" />
                   <Input
                     ref={inputRef}
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
-                    placeholder="Ask about this document..."
+                    onPaste={composer.handlePaste}
+                    placeholder={composer.items.length ? "Say what to do with the images..." : "Ask about this document..."}
                     className="flex-1"
                     disabled={isTyping}
                   />
@@ -1307,7 +1359,7 @@ function DocumentContent() {
                     <Button
                       type="submit"
                       size="icon"
-                      disabled={!question.trim()}
+                      disabled={!canAsk}
                       className="flex-shrink-0"
                     >
                       <Send className="h-4 w-4" />
@@ -1541,6 +1593,8 @@ function DocumentContent() {
           />
         </div>
       )}
+
+      <ChatImageViewer actions={imageActions} />
 
       <ExpandedMessageModal
         open={!!expandedMessage}

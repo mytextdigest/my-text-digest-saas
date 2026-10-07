@@ -24,6 +24,8 @@ export const config = {
     // Secure APIs
     "/api/documents/:path*",
     "/api/projects/:path*",
+    "/api/chat-attachments/:path*",
+    "/api/chat-images/:path*",
     "/api/settings/:path*",
     "/api/subscription/:path*",
     "/api/s3/:path*",

@@ -108,7 +108,8 @@ export function resize(src, width, height, channels, newWidth, newHeight) {
   return out;
 }
 
-function encodePng(pixels, width, height, channels) {
+// channels: 1 (grey), 3 (RGB) or 4 (RGBA, alpha kept).
+export function encodePng(pixels, width, height, channels) {
   const png = new PNG({ width, height });
   const rgba = Buffer.alloc(width * height * 4);
   for (let p = 0; p < width * height; p++) {
@@ -116,7 +117,7 @@ function encodePng(pixels, width, height, channels) {
     rgba[p * 4] = pixels[i];
     rgba[p * 4 + 1] = channels === 1 ? pixels[i] : pixels[i + 1];
     rgba[p * 4 + 2] = channels === 1 ? pixels[i] : pixels[i + 2];
-    rgba[p * 4 + 3] = 255;
+    rgba[p * 4 + 3] = channels === 4 ? pixels[i + 3] : 255;
   }
   png.data = rgba;
   return PNG.sync.write(png);

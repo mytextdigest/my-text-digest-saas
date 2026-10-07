@@ -6,7 +6,9 @@
 // attaching freeform elements) lives in worker/processSlideBuild.js.
 //
 // Ported verbatim from electron/slides/imagePrompt.js — including the
-// gpt-image-1 model call, sizes, and the people/subject-line scoping rules.
+// image model call (MODEL_IMAGE), sizes, and the people/subject-line scoping rules.
+
+import { MODEL_IMAGE } from "../models.js";
 
 // The dark, full-bleed hero slide types have genuine empty background space
 // for a right-side image panel without fighting existing content for room —
@@ -88,7 +90,7 @@ export function buildDeckSubjectLine(outline) {
 // deck and passed to every slide's prompt — see that function's comment.
 // allowPeople: decided per-slide by pickPeopleAllowedIndices below — false
 // for most slides in a deck by default. Without an explicit instruction
-// either way, gpt-image-1's default "photographic, business" style tends to
+// either way, the image model's default "photographic, business" style tends to
 // add a person with a theatrical, overly-engaged expression to look
 // dynamic, which reads as uncanny/off for a slide background. Rather than
 // ban people outright (a quote's speaker, a team slide legitimately want
@@ -173,7 +175,7 @@ export function buildOnDemandImagePrompt(userPrompt, { slide, outline, theme } =
   return parts.join(" ");
 }
 
-// The 3 shapes gpt-image-1 actually supports (plus "auto", which we never
+// The 3 shapes the image model actually supports (plus "auto", which we never
 // pass — the Uploads panel's aspect-ratio picker always sends one of these
 // explicitly). Exported so the generate-slide-image route can whitelist the
 // `size` a request is allowed to ask for, same never-trust-the-payload
@@ -188,7 +190,7 @@ export const DEFAULT_GENERATE_IMAGE_SIZE = "1024x1536";
 // several of these per generation.
 export async function generateSlideImageBuffer(openai, prompt, size = DEFAULT_GENERATE_IMAGE_SIZE) {
   const response = await openai.images.generate({
-    model: "gpt-image-1",
+    model: MODEL_IMAGE,
     prompt,
     size: GENERATE_IMAGE_SIZES.has(size) ? size : DEFAULT_GENERATE_IMAGE_SIZE,
     quality: "medium",

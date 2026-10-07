@@ -8,6 +8,7 @@ import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
 import { removeTablesForDocument } from "@/lib/tables/cleanup";
 import { removeComparisonsForDocument } from "@/lib/compareCleanup";
 import s3Client from "@/lib/s3.mjs";
+import { deleteAttachmentRowsForMessages, deleteS3Keys } from "@/lib/chatImages/server";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -148,7 +149,12 @@ export async function DELETE(req, { params }) {
   // deleting chunks first would leave a dangling FK. Extracted tables go
   // after the graph cleanup (their exact facts hang off table chunks), with
   // the derived tables built from them and the extraction log.
+  // Chat images of this document's conversations go with their messages;
+  // their S3 objects are deleted after commit.
+  let chatImageKeys = [];
   await prisma.$transaction(async (tx) => {
+    const messageIds = (await tx.message.findMany({ where: { conversation: { documentId: id } }, select: { id: true } })).map((m) => m.id);
+    chatImageKeys = await deleteAttachmentRowsForMessages(tx, "document", messageIds);
     await tx.message.deleteMany({ where: { conversation: { documentId: id } } });
     await tx.conversation.deleteMany({ where: { documentId: id } });
     await tx.figure.deleteMany({ where: { documentId: id } });
@@ -160,6 +166,7 @@ export async function DELETE(req, { params }) {
     await tx.slideImage.deleteMany({ where: { documentId: id } });
     await tx.document.delete({ where: { id } });
   });
+  await deleteS3Keys(chatImageKeys);
 
   return NextResponse.json({ success: true });
 }

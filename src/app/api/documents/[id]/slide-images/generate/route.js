@@ -1,5 +1,5 @@
 // src/app/api/documents/[id]/slide-images/generate/route.js
-// generate-slide-image — direct await (one gpt-image-1 call), same posture
+// generate-slide-image — direct await (one MODEL_IMAGE call), same posture
 // as other single-call routes in this series (not enqueued — the aspect-
 // ratio picker + 400-char prompt cap keep this fast/bounded enough for a
 // synchronous request/response).

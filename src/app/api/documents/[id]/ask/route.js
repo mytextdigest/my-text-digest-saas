@@ -18,6 +18,8 @@ import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
 import { stripMarkdownArtifacts } from "@/lib/textFormat";
 import { FIND_TABLES_TOOL, runFindTablesTool } from "@/lib/tables/queryTool";
 import { buildTableContext, pickTableCitations, tableChartExtraData, addToolCitations } from "@/lib/tables/chatContext";
+import { bindChatAttachments } from "@/lib/chatImages/server";
+import { runImageTurn } from "@/lib/chatImages/turn";
 
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -31,7 +33,10 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id:documentId } = await params;
-    const { question, conversationId: incomingConvId, requestId, pinnedTableId = null } = await req.json();
+    const body = await req.json();
+    const { conversationId: incomingConvId, requestId, pinnedTableId = null } = body;
+    const question = String(body?.question || "").trim();
+    const attachmentIds = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
 
     const controller = new AbortController();
     activeRequests.set(requestId, controller);
@@ -41,7 +46,7 @@ export async function POST(req, { params }) {
       activeRequests.delete(requestId);
     });
 
-    if (!documentId || !question)
+    if (!documentId || (!question && !attachmentIds.length))
       return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     // ----------------------------
@@ -110,6 +115,29 @@ export async function POST(req, { params }) {
         status: "pending"
       }
     });
+
+    // ----------------------------
+    // 4b) IMAGE TURNS (attachments now, or a follow-up on recent images) —
+    // same routing as project chat, scoped to this document, and before
+    // chunk loading / embedding repair so image turns don't pay for them.
+    // ----------------------------
+    const boundIds = await bindChatAttachments("document", userMsg.id, userId, attachmentIds);
+    if (!question && !boundIds.length) {
+      await prisma.message.update({ where: { id: userMsg.id }, data: { status: "error" } });
+      return NextResponse.json({ success: false, conversationId, error: "The attached images could not be found. Please attach them again." });
+    }
+    try {
+      const imageTurn = await runImageTurn({
+        openai, kind: "document", conversationId, userMessageId: userMsg.id, userId,
+        question, docIds: [documentId], signal: controller.signal,
+      });
+      if (imageTurn) return NextResponse.json(imageTurn);
+    } catch (err) {
+      if (controller.signal.aborted || err?.name === "AbortError") {
+        return NextResponse.json({ success: false, cancelled: true });
+      }
+      throw err;
+    }
 
     // ----------------------------
     // 5) LOAD CHUNKS

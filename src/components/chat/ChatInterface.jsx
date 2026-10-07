@@ -18,6 +18,8 @@ import ProjectTablesView from '@/components/tables/ProjectTablesView';
 import DerivedTableCard, { TableCitationChips } from '@/components/tables/DerivedTableCard';
 import InsightView from '@/components/insights/InsightView';
 import { useChatEngine } from './useChatEngine';
+import { MessageImageThumbs, GeneratedImage, ImageGeneratingPlaceholder, ComposerAttachments, AttachButton, DropOverlay, ChatImageViewer } from './ChatImages';
+import { useComposerAttachments, useChatImageActions } from './useChatImages';
 import {
   GeneralKnowledgePermissionPrompt,
   GeneralKnowledgeProgressChip,
@@ -50,7 +52,7 @@ const renderMessageContent = (content, citations, onCitationClick) => {
   });
 };
 
-const ChatInterface = ({ className, projectId }) => {
+const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph' | 'comparisons' | 'tables'
   const [messages, setMessages] = useState([]);
@@ -88,21 +90,31 @@ const ChatInterface = ({ className, projectId }) => {
         }).then(r => r.json());
   
         if (res.success) {
-          setMessages(
-            res.messages.map(m => ({
-              id: m.id,
-              type: m.role === "user" ? "user" : "assistant",
-              content: m.content,
-              timestamp: new Date(m.timestamp),
-              chart: m.chart || null,
-              citations: m.citations || null,
-              externalKnowledgeQuery: m.externalKnowledgeQuery || null,
-              comparisonId: m.comparisonId || null,
-              insight: m.insight || null,
-              derivedTableId: m.derivedTableId || null,
-              tableCitations: m.tableCitations || []
-            }))
-          );
+          const mapped = res.messages.map(m => ({
+            id: m.id,
+            type: m.role === "user" ? "user" : "assistant",
+            content: m.content,
+            status: m.status,
+            timestamp: new Date(m.timestamp),
+            chart: m.chart || null,
+            citations: m.citations || null,
+            externalKnowledgeQuery: m.externalKnowledgeQuery || null,
+            comparisonId: m.comparisonId || null,
+            insight: m.insight || null,
+            derivedTableId: m.derivedTableId || null,
+            tableCitations: m.tableCitations || [],
+            attachments: m.attachments || [],
+            imageProgress: m.imageProgress || null
+          }));
+          // An image still generating resumes its placeholder; the result
+          // replaces the message when it lands.
+          const last = mapped[mapped.length - 1];
+          if (last?.type === 'assistant' && last.status === 'generating') {
+            setMessages(mapped.slice(0, -1));
+            resumeImageJob({ kind: 'project', messageId: last.id, leadIn: last.content, progress: last.imageProgress });
+          } else {
+            setMessages(mapped);
+          }
         }
       } catch (err) {
         console.error("Error loading project messages:", err);
@@ -110,6 +122,7 @@ const ChatInterface = ({ className, projectId }) => {
     }
   
     loadMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
   
 
@@ -119,24 +132,24 @@ const ChatInterface = ({ className, projectId }) => {
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   // --- Ask engine (send / cancel / general-knowledge confirmation) ---
+  const mapAskResult = useCallback((res) => ({
+    id: `ai-${Date.now()}-${Math.random()}`,
+    type: "assistant",
+    content: res.answer,
+    timestamp: new Date(),
+    chart: res.chart || null,
+    citations: res.citations || null,
+    externalKnowledgeQuery: res.externalKnowledgeQuery || null,
+    comparisonId: res.comparisonId || null,
+    insight: res.insight || null,
+    derivedTableId: res.derivedTableId || null,
+    tableCitations: res.tableCitations || [],
+    attachments: res.attachments || []
+  }), []);
+
   const handleAskResult = useCallback((res) => {
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `ai-${Date.now()}`,
-        type: "assistant",
-        content: res.answer,
-        timestamp: new Date(),
-        chart: res.chart || null,
-        citations: res.citations || null,
-        externalKnowledgeQuery: res.externalKnowledgeQuery || null,
-        comparisonId: res.comparisonId || null,
-        insight: res.insight || null,
-        derivedTableId: res.derivedTableId || null,
-        tableCitations: res.tableCitations || []
-      }
-    ]);
-  }, []);
+    setMessages(prev => [...prev, mapAskResult(res)]);
+  }, [mapAskResult]);
 
   const handleAskError = useCallback((res) => {
     setMessages(prev => [
@@ -150,13 +163,13 @@ const ChatInterface = ({ className, projectId }) => {
     ]);
   }, []);
 
-  const ask = useCallback((question, requestId, signal) => {
+  const ask = useCallback((question, requestId, signal, { attachments = [] } = {}) => {
     return fetch("/api/projects/ask", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       signal,
-      body: JSON.stringify({ projectId, question, requestId })
+      body: JSON.stringify({ projectId, question, requestId, attachmentIds: attachments.map(a => a.id) })
     }).then(r => r.json());
   }, [projectId]);
 
@@ -167,25 +180,33 @@ const ChatInterface = ({ className, projectId }) => {
     sendMessage,
     respondToConfirmation,
     cancelRequest,
+    resumeImageJob,
   } = useChatEngine({ ask, onResult: handleAskResult, onError: handleAskError });
+
+  const composer = useComposerAttachments({ messageTable: 'project', disabled: isTyping });
+  const imageActions = useChatImageActions({ projectId, setMessages, mapAskResult, onDocumentAdded });
+  const canSend = !composer.isUploading && (inputValue.trim().length > 0 || composer.readyAttachments.length > 0);
 
   // --- Send message ---
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!inputValue.trim() || !projectId) return;
+    if (!canSend || !projectId) return;
 
+    const attachments = composer.readyAttachments;
     const userMessage = {
       id: `user-${Date.now()}`,
       type: 'user',
       content: inputValue,
+      attachments,
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
 
     const question = inputValue;
     setInputValue('');
+    composer.clear();
 
-    sendMessage(question);
+    sendMessage(question, { attachments });
   };
 
   // --- Cancel Request ---
@@ -405,7 +426,8 @@ const ChatInterface = ({ className, projectId }) => {
             <ProjectTablesView projectId={projectId} className="h-full" />
           </div>
         ) : (
-          <>
+          <div className="relative flex-1 min-h-0 flex flex-col" {...composer.dropHandlers}>
+        <DropOverlay visible={composer.isDraggingFiles} />
         {/* Messages Area */}
         <div className="chat-messages-area chat-scrollbar relative">
           {messages.length === 0 ? (
@@ -448,12 +470,21 @@ const ChatInterface = ({ className, projectId }) => {
                     <div
                       className={cn(
                         "flex flex-col",
-                        message.derivedTableId ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
+                        message.derivedTableId || (message.type === 'assistant' && message.attachments?.length)
+                          ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
                         message.type === 'user' ? 'items-end' : 'items-start'
                       )}
                     >
 
+                      {message.type === 'user' && (
+                        <MessageImageThumbs
+                          images={message.attachments}
+                          onOpen={(i) => imageActions.openViewer(message.attachments, i)}
+                        />
+                      )}
+
                       {/* MESSAGE BUBBLE */}
+                      {(message.type !== 'user' || message.content) && (
                       <div
                         className={cn(
                           "rounded-2xl px-4 py-3 overflow-hidden",
@@ -470,13 +501,20 @@ const ChatInterface = ({ className, projectId }) => {
                           </p>
                         )}
                       </div>
+                      )}
+
+                      {message.type === 'assistant' && message.attachments?.map((img) => (
+                        <GeneratedImage key={img.id} {...imageActions.generatedImageProps(img)} />
+                      ))}
 
                       {/* ACTION BUTTONS BELOW */}
-                      <MessageActions
-                        content={message.content}
-                        onExpand={() => openExpanded(message)}
-                        align={message.type === 'user' ? "right" : "left"}
-                      />
+                      {message.content && (
+                        <MessageActions
+                          content={message.content}
+                          onExpand={() => openExpanded(message)}
+                          align={message.type === 'user' ? "right" : "left"}
+                        />
+                      )}
 
                       {message.type === 'assistant' && message.derivedTableId && (
                         <DerivedTableCard derivedTableId={message.derivedTableId} />
@@ -542,6 +580,15 @@ const ChatInterface = ({ className, projectId }) => {
                   </div>
                   {progress?.stage === 'consulting_general_knowledge' ? (
                     <GeneralKnowledgeProgressChip />
+                  ) : progress?.stage === 'generating_image' ? (
+                    <div className="flex flex-col items-start max-w-[85%] w-full">
+                      {progress.leadIn && (
+                        <div className="rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">{progress.leadIn}</p>
+                        </div>
+                      )}
+                      <ImageGeneratingPlaceholder status={progress.status} />
+                    </div>
                   ) : (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 shadow-md border border-gray-200 dark:border-gray-700">
                       <div className="flex space-x-1">
@@ -576,6 +623,7 @@ const ChatInterface = ({ className, projectId }) => {
           className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
         >
           <div className="relative">
+            <ComposerAttachments items={composer.items} onRemove={composer.removeItem} />
             <div className={cn(
               "flex items-center space-x-3 p-3 rounded-lg",
               "bg-white dark:bg-gray-700",
@@ -583,13 +631,15 @@ const ChatInterface = ({ className, projectId }) => {
               "transition-all duration-300",
               inputFocused && "border-blue-400 dark:border-blue-500"
             )}>
+              <AttachButton composer={composer} disabled={isTyping} />
               <Input
                 ref={inputRef}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
-                placeholder="Ask me anything about this project..."
+                onPaste={composer.handlePaste}
+                placeholder={composer.items.length ? "Say what to do with the images..." : "Ask me anything about this project..."}
                 disabled={isTyping}
                 className="flex-1 border-0 bg-transparent focus:ring-0 focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
               />
@@ -610,7 +660,7 @@ const ChatInterface = ({ className, projectId }) => {
                   <Button
                     type="submit"
                     size="icon"
-                    disabled={!inputValue.trim()}
+                    disabled={!canSend}
                     className="bg-blue-500 hover:bg-blue-600 text-white"
                   >
                     <Send className="h-4 w-4" />
@@ -622,7 +672,7 @@ const ChatInterface = ({ className, projectId }) => {
 
           </div>
         </form>
-          </>
+          </div>
         )}
       </CardContent>
 
@@ -637,6 +687,8 @@ const ChatInterface = ({ className, projectId }) => {
         cancelText="Cancel"
         isLoading={isDeleting}
       />
+
+      <ChatImageViewer actions={imageActions} />
 
       <ExpandedMessageModal
         open={!!expandedMessage}

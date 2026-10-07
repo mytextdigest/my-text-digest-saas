@@ -25,13 +25,18 @@ import {
   processTablesFiguresJob,
   processTablesReembedJob,
 } from "./processTables.js";
+import { processChatImageJob, failChatImageMessage } from "./processChatImage.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
+// Chat-image jobs get their own queue and poll loop, so an image request
+// never waits behind a large document's chunk → embed → summarize chain.
+// Unset (local dev): they arrive on the main queue instead.
+const CHAT_QUEUE_URL = process.env.SQS_CHAT_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // Idle-socket timeouts on the AWS clients — without these, a stalled network
-// call to SQS/S3 hangs the single-threaded mainLoop forever, blocking every
+// call to SQS/S3 hangs a single-threaded poll loop forever, blocking every
 // other user's queued job behind it, not just the one that's stuck.
 const sqs = new SQSClient({
   requestHandler: new NodeHttpHandler({ connectionTimeout: 5000, requestTimeout: 30000 }), // > the 20s long-poll wait
@@ -678,20 +683,23 @@ async function processJob(job) {
   if (job.type === "tables-scan")    return processTablesScanJob(job);
   if (job.type === "tables-figures") return processTablesFiguresJob(job);
   if (job.type === "tables-reembed") return processTablesReembedJob(job);
+  if (job.type === "chat-image")     return processChatImageJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }
 
 
-async function mainLoop() {
-  console.log("Worker started. Waiting for jobs...");
+// One message at a time per queue, each with its own watchdog. Two of
+// these run side by side (main + chat), independently.
+async function pollLoop(queueUrl, label) {
+  console.log(`Worker started [${label}]. Waiting for jobs...`);
 
   while (true) {
     let res;
     try {
       res = await sqs.send(
         new ReceiveMessageCommand({
-          QueueUrl: QUEUE_URL,
+          QueueUrl: queueUrl,
           MaxNumberOfMessages: 1,
           WaitTimeSeconds: 20,
           VisibilityTimeout: 600,
@@ -701,7 +709,7 @@ async function mainLoop() {
       // A transient SQS error (throttling, network blip, brief AWS outage)
       // must not crash the whole worker process — that would silently stop
       // every user's pipeline until someone notices and restarts it by hand.
-      console.error("❌ SQS receive error:", err.message);
+      console.error(`❌ SQS receive error [${label}]:`, err.message);
       await new Promise((r) => setTimeout(r, 5000));
       continue;
     }
@@ -716,12 +724,12 @@ async function mainLoop() {
 
       await sqs.send(
         new DeleteMessageCommand({
-          QueueUrl: QUEUE_URL,
+          QueueUrl: queueUrl,
           ReceiptHandle: msg.ReceiptHandle,
         })
       );
     } catch (err) {
-      console.error("❌ Worker error:", err);
+      console.error(`❌ Worker error [${label}]:`, err);
       await recordJobFailure(body, err);
     }
   }
@@ -772,7 +780,16 @@ async function mainLoop() {
 // only a watchdog timeout reaches this catch — and table extraction must
 // never flip a document the user can already chat with into "failed"
 // (tables-reembed also carries a tableId, not a docId).
+//
+// "chat-image" is keyed by `messageId`, not `docId`, and catches every
+// internal error onto the chat message itself (never throws), so only a
+// watchdog timeout reaches this catch — which must still resolve the
+// message, or its "generating" placeholder would spin forever.
 async function recordJobFailure(body, err) {
+  if (body?.type === "chat-image") {
+    await failChatImageMessage(body, err);
+    return;
+  }
   if (body?.type === "slide-outline" || body?.type === "slide-build") {
     if (!body.deckId) return;
     try {
@@ -815,14 +832,15 @@ async function recordJobFailure(body, err) {
   }
 }
 
-// mainLoop() only ever settles on a bug we didn't anticipate — every
+// pollLoop() only ever settles on a bug we didn't anticipate — every
 // expected failure path is caught inside the loop already. Restart rather
 // than let the whole worker die and sit there until someone notices.
-function startWorker() {
-  mainLoop().catch((err) => {
-    console.error("❌ mainLoop crashed, restarting in 5s:", err);
-    setTimeout(startWorker, 5000);
+function startLoop(queueUrl, label) {
+  pollLoop(queueUrl, label).catch((err) => {
+    console.error(`❌ pollLoop [${label}] crashed, restarting in 5s:`, err);
+    setTimeout(() => startLoop(queueUrl, label), 5000);
   });
 }
 
-startWorker();
+startLoop(QUEUE_URL, "main");
+if (CHAT_QUEUE_URL && CHAT_QUEUE_URL !== QUEUE_URL) startLoop(CHAT_QUEUE_URL, "chat");

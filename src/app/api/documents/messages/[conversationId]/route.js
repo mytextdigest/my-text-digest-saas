@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
+import { attachmentsByMessage, isHiddenImageMessage } from "@/lib/chatImages/server";
 
 export async function GET(req, { params }) {
   try {
@@ -21,10 +22,17 @@ export async function GET(req, { params }) {
     if (!conv)
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
 
-    const messages = await prisma.message.findMany({
+    const rows = (await prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: "asc" }
-    });
+    })).filter((m) => !isHiddenImageMessage(m));
+    const attachments = await attachmentsByMessage("document", rows.map((m) => m.id));
+    // imageJobJson is the worker's input (it can hold document excerpts).
+    const messages = rows.map(({ imageJobJson, ...m }) => ({
+      ...m,
+      imageProgress: m.status === "generating" ? m.imageProgress : null,
+      attachments: attachments[m.id] || [],
+    }));
 
     return NextResponse.json({ success: true, messages });
 

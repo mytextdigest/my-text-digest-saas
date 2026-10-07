@@ -18,12 +18,13 @@ model User {
 
   storageUsedBytes BigInt @default(0)
 
-  conversations Conversation[]
-  documents     Document[]
-  projects      Project[]
-  projectChats  ProjectConversation[]
-  settings      Setting[]
-  subscription  Subscription?
+  conversations   Conversation[]
+  documents       Document[]
+  projects        Project[]
+  projectChats    ProjectConversation[]
+  settings        Setting[]
+  subscription    Subscription?
+  chatAttachments ChatAttachment[]
 }
 
 model OtpToken {
@@ -197,6 +198,8 @@ model Message {
   insightJson            Json?        @map("insight_json")
   derivedTableId         String?      @map("derived_table_id")
   tableCitations         Json?        @map("table_citations")
+  imageProgress          String?      @map("image_progress") // live status line while status = "generating"
+  imageJobJson           Json?        @map("image_job_json") // the queued chat-image job's inputs; cleared when done
   conversation           Conversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -224,6 +227,8 @@ model ProjectMessage {
   insightJson            Json?               @map("insight_json")
   derivedTableId         String?             @map("derived_table_id")
   tableCitations         Json?               @map("table_citations")
+  imageProgress          String?             @map("image_progress") // live status line while status = "generating"
+  imageJobJson           Json?               @map("image_job_json") // the queued chat-image job's inputs; cleared when done
   conversation           ProjectConversation @relation(fields: [conversationId], references: [id])
 }
 
@@ -519,4 +524,34 @@ model DerivedTable {
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([projectId])
+}
+
+// ---------------------------------------------------------------------------
+// Chat image attachments — images the user attaches to a chat message
+// (direction "input") and images the assistant generates ("output").
+// Polymorphic like the desktop: messageKind picks Message ("document") or
+// ProjectMessage ("project"); no FK, cleanup is explicit in the clear/delete
+// routes. messageId is null while an upload is staged in the composer.
+// ---------------------------------------------------------------------------
+
+model ChatAttachment {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  messageKind     String   @map("message_kind") // "project" | "document"
+  messageId       String?  @map("message_id") // null while staged in the composer
+  direction       String // "input" | "output"
+  s3Key           String   @map("s3_key")
+  originalName    String?  @map("original_name")
+  mime            String
+  width           Int?
+  height          Int?
+  sizeBytes       Int?     @map("size_bytes")
+  savedDocumentId String?  @map("saved_document_id")
+  generationJson  Json?    @map("generation_json") // outputs only: { prompt, size, quality, inputAttachmentIds, improvedFrom? }
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([messageKind, messageId])
+  @@index([userId, createdAt])
 }

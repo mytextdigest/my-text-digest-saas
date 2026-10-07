@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
+import { deleteAttachmentsForMessages } from "@/lib/chatImages/server";
 
 export async function POST(req, { params }) {
   try {
@@ -29,6 +30,12 @@ export async function POST(req, { params }) {
       });
       return NextResponse.json({ success: true, conversationId: newConv.id });
     }
+
+    const messageIds = (await prisma.message.findMany({
+      where: { conversationId: conv.id },
+      select: { id: true },
+    })).map((m) => m.id);
+    await deleteAttachmentsForMessages("document", messageIds);
 
     // 🔥 DELETE messages (this is the actual clear)
     await prisma.message.deleteMany({

@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { removeGraphDataForDocument } from "@/lib/graph/cleanup";
 import { removeTablesForDocument } from "@/lib/tables/cleanup";
 import { removeComparisonsForDocument } from "@/lib/compareCleanup";
+import { deleteAttachmentRowsForMessages, deleteS3Keys } from "@/lib/chatImages/server";
 
 export async function GET(req, { params }) {
   const session = await getServerSession();
@@ -103,6 +104,7 @@ export async function DELETE(req, { params }) {
     // Transactionally delete everything related to the project.
     // Order: document messages -> document conversations -> chunks -> documents
     // then project messages -> project conversations -> project
+    const chatImageKeys = [];
     await prisma.$transaction(async (prismaTx) => {
       // 1) find documents for this project
       const docs = await prismaTx.document.findMany({
@@ -136,6 +138,12 @@ export async function DELETE(req, { params }) {
         const docConvoIds = docConvos.map((c) => c.id);
 
         if (docConvoIds.length > 0) {
+          // chat images of those conversations (S3 objects after commit)
+          const docMessageIds = (await prismaTx.message.findMany({
+            where: { conversationId: { in: docConvoIds } },
+            select: { id: true },
+          })).map((m) => m.id);
+          chatImageKeys.push(...await deleteAttachmentRowsForMessages(prismaTx, "document", docMessageIds));
           // delete messages for those conversations
           await prismaTx.message.deleteMany({
             where: { conversationId: { in: docConvoIds } },
@@ -165,6 +173,11 @@ export async function DELETE(req, { params }) {
       const projConvoIds = projConvos.map((c) => c.id);
 
       if (projConvoIds.length > 0) {
+        const projMessageIds = (await prismaTx.projectMessage.findMany({
+          where: { conversationId: { in: projConvoIds } },
+          select: { id: true },
+        })).map((m) => m.id);
+        chatImageKeys.push(...await deleteAttachmentRowsForMessages(prismaTx, "project", projMessageIds));
         await prismaTx.projectMessage.deleteMany({
           where: { conversationId: { in: projConvoIds } },
         });
@@ -181,6 +194,7 @@ export async function DELETE(req, { params }) {
         where: { id: projectId },
       });
     });
+    await deleteS3Keys(chatImageKeys);
 
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -36,3 +36,14 @@ export async function getOpenAIForDocument(docId) {
     timeout: 120 * 1000,
   });
 }
+
+// Same key lookup, by user — for jobs that aren't tied to a document
+// (chat image generation).
+export async function getOpenAIForUser(userId) {
+  const setting = await prisma.setting.findFirst({
+    where: { userId, key: "openai_api_key" },
+    select: { value: true },
+  });
+  if (!setting?.value) throw new Error("OPENAI_KEY_MISSING");
+  return new OpenAI({ apiKey: setting.value, timeout: 120 * 1000 });
+}

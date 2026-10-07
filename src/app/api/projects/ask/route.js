@@ -19,6 +19,8 @@ import {
   buildTableContext, pickTableCitations, allTableCitations, tableChartExtraData, addToolCitations,
 } from "@/lib/tables/chatContext";
 import { toChartData } from "@/lib/tables/serialize";
+import { bindChatAttachments } from "@/lib/chatImages/server";
+import { runImageTurn } from "@/lib/chatImages/turn";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -90,7 +92,9 @@ export async function POST(req) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const { projectId, question, requestId} = body || {};
+    const { projectId, requestId } = body || {};
+    const question = String(body?.question || "").trim();
+    const attachmentIds = Array.isArray(body?.attachmentIds) ? body.attachmentIds : [];
 
     const controller = new AbortController();
     activeRequests.set(requestId, controller);
@@ -100,7 +104,7 @@ export async function POST(req) {
       activeRequests.delete(requestId);
     });
 
-    if (!projectId || !question)
+    if (!projectId || (!question && !attachmentIds.length))
       return NextResponse.json({ error: "Missing projectId or question" }, { status: 400 });
 
     // verify project belongs to user
@@ -164,6 +168,30 @@ export async function POST(req) {
         status: "pending",
       },
     });
+
+    // 2b) Image turns (attachments now, or a follow-up on recent images) are
+    // routed before any document handling — see runImageTurn.
+    const boundIds = await bindChatAttachments("project", userMsg.id, project.userId, attachmentIds);
+    if (!question && !boundIds.length) {
+      await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "error" } });
+      return NextResponse.json({ success: false, error: "The attached images could not be found. Please attach them again." });
+    }
+    try {
+      const selectedDocIds = (await prisma.document.findMany({
+        where: { projectId, selected: 1 },
+        select: { id: true },
+      })).map((d) => d.id);
+      const imageTurn = await runImageTurn({
+        openai, kind: "project", conversationId: conv.id, userMessageId: userMsg.id, userId: project.userId,
+        question, docIds: selectedDocIds, signal: controller.signal,
+      });
+      if (imageTurn) return NextResponse.json(imageTurn);
+    } catch (err) {
+      if (controller.signal.aborted || err?.name === "AbortError") {
+        return NextResponse.json({ success: false, cancelled: true });
+      }
+      throw err;
+    }
 
     // 🟡 Debug: selected vs unselected docs for mention detection
     const selectedDocsRaw = await prisma.document.findMany({

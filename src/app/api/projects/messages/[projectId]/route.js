@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
+import { attachmentsByMessage, isHiddenImageMessage } from "@/lib/chatImages/server";
 
 export async function GET(req, { params }) {
   try {
@@ -26,10 +27,11 @@ export async function GET(req, { params }) {
 
     if (!conv) return NextResponse.json({ success: true, messages: [] });
 
-    const messages = await prisma.projectMessage.findMany({
+    const messages = (await prisma.projectMessage.findMany({
       where: { conversationId: conv.id },
       orderBy: { createdAt: "asc" },
-    });
+    })).filter((m) => !isHiddenImageMessage(m));
+    const attachments = await attachmentsByMessage("project", messages.map((m) => m.id));
 
     const mapped = messages.map((m) => ({
       id: m.id,
@@ -45,6 +47,8 @@ export async function GET(req, { params }) {
       insight: m.insightJson || null,
       derivedTableId: m.derivedTableId || null,
       tableCitations: m.tableCitations || [],
+      attachments: attachments[m.id] || [],
+      imageProgress: m.status === "generating" ? m.imageProgress : null,
     }));
 
     return NextResponse.json({ success: true, messages: mapped });
