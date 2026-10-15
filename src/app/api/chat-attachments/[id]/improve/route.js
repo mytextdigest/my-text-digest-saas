@@ -58,7 +58,7 @@ export async function POST(req, { params }) {
       throw new Error("Could not start the redraw. Please try again.");
     }
 
-    return NextResponse.json({ success: true, pending: { kind: row.messageKind, messageId: assistant.id } });
+    return NextResponse.json({ success: true, messageId: assistant.id, pending: { kind: row.messageKind, messageId: assistant.id } });
   } catch (err) {
     console.error("❌ chat-attachments improve:", err);
     return fail(err);

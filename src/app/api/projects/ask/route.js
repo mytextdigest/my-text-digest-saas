@@ -13,7 +13,6 @@ import {
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { COMPARE_DOCUMENTS_TOOL, runCompareDocumentsTool } from "@/lib/compareQueryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
-import { stripMarkdownArtifacts } from "@/lib/textFormat";
 import { FIND_TABLES_TOOL, COMPARE_TABLES_TOOL, runFindTablesTool, runCompareTablesTool } from "@/lib/tables/queryTool";
 import {
   buildTableContext, pickTableCitations, allTableCitations, tableChartExtraData, addToolCitations,
@@ -433,10 +432,10 @@ BM25 retrieval has selected the most relevant chunks.
           { signal: controller.signal }
         );
 
-        const compareAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+        const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
 
         await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-        await prisma.projectMessage.create({
+        const assistantMsg = await prisma.projectMessage.create({
           data: {
             conversationId: conv.id,
             role: "assistant",
@@ -446,7 +445,7 @@ BM25 retrieval has selected the most relevant chunks.
           },
         });
 
-        return NextResponse.json({ success: true, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
+        return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
       }
 
       if (bm25ToolCall?.function?.name === "query_knowledge_graph") {
@@ -475,14 +474,14 @@ BM25 retrieval has selected the most relevant chunks.
           { signal: controller.signal }
         );
 
-        const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+        const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
 
         await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-        await prisma.projectMessage.create({
+        const assistantMsg = await prisma.projectMessage.create({
           data: { conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done" },
         });
 
-        return NextResponse.json({ success: true, answer: kgAnswerText });
+        return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: kgAnswerText });
       }
 
       if (bm25ToolCall?.function?.name === "consult_general_knowledge") {
@@ -520,7 +519,7 @@ BM25 retrieval has selected the most relevant chunks.
         });
       }
 
-      const assistantText = stripMarkdownArtifacts(completion?.choices?.[0]?.message?.content?.trim() || "");
+      const assistantText = completion?.choices?.[0]?.message?.content?.trim() || "";
 
       // Store user & assistant messages
       await prisma.projectMessage.update({
@@ -528,7 +527,7 @@ BM25 retrieval has selected the most relevant chunks.
         data: { status: "done" },
       });
 
-      await prisma.projectMessage.create({
+      const assistantMsg = await prisma.projectMessage.create({
         data: {
           conversationId: conv.id,
           role: "assistant",
@@ -538,7 +537,7 @@ BM25 retrieval has selected the most relevant chunks.
         },
       });
 
-      return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec });
+      return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: assistantText, chart: chartSpec });
     }
 
 
@@ -640,7 +639,7 @@ BM25 retrieval has selected the most relevant chunks.
 
       if (analysisResult) {
         await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-        await prisma.projectMessage.create({
+        const assistantMsg = await prisma.projectMessage.create({
           data: {
             conversationId: conv.id,
             role: "assistant",
@@ -650,7 +649,7 @@ BM25 retrieval has selected the most relevant chunks.
           },
         });
 
-        return NextResponse.json({ success: true, answer: analysisResult.fallbackText, insight: analysisResult.insight });
+        return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: analysisResult.fallbackText, insight: analysisResult.insight });
       }
       // fall through to the existing chart/tool/factual flow below
     }
@@ -742,7 +741,8 @@ within the documents' own scope, not external comparison data (see STEP 0):
 "I cannot answer that based on the selected documents."
 
 Response format:
-- Plain text only (no markdown, no lists, no special formatting).
+- You may use light markdown formatting where it aids clarity — **bold** for key terms or figures,
+  short bullet lists for multiple items. Keep it natural and sparing; this is a chat reply, not a report.
 - When you refer to a specific document by name, quote its filename exactly as it
   appears after "Document:" in the context above (including the extension), so it can
   be linked back to the source.
@@ -827,7 +827,7 @@ Response format:
         },
         { signal: controller.signal }
       );
-      const tablesAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const tablesAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
 
       // A derived comparison replaces the pre-answer chart: chart its exact rows.
       if (wantsChart && derivedTableId) {
@@ -849,7 +849,7 @@ Response format:
       const citations = documentCitations(tablesAnswerText);
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-      await prisma.projectMessage.create({
+      const assistantMsg = await prisma.projectMessage.create({
         data: {
           conversationId: conv.id,
           role: "assistant",
@@ -863,7 +863,7 @@ Response format:
       });
 
       return NextResponse.json({
-        success: true, answer: tablesAnswerText, chart: chartSpec, citations, derivedTableId, tableCitations,
+        success: true, messageId: assistantMsg.id, answer: tablesAnswerText, chart: chartSpec, citations, derivedTableId, tableCitations,
       });
     }
 
@@ -899,10 +899,10 @@ Response format:
         { signal: controller.signal }
       );
 
-      const compareAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const compareAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-      await prisma.projectMessage.create({
+      const assistantMsg = await prisma.projectMessage.create({
         data: {
           conversationId: conv.id,
           role: "assistant",
@@ -912,7 +912,7 @@ Response format:
         },
       });
 
-      return NextResponse.json({ success: true, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
+      return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: compareAnswerText, comparisonId: compareResult.comparisonId || null });
     }
 
     if (mainToolCall?.function?.name === "query_knowledge_graph") {
@@ -947,18 +947,18 @@ Response format:
         { signal: controller.signal }
       );
 
-      const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
       const kgTableCitations = pickTableCitations(kgAnswerText, tableCitationsSource);
 
       await prisma.projectMessage.update({ where: { id: userMsg.id }, data: { status: "done" } });
-      await prisma.projectMessage.create({
+      const assistantMsg = await prisma.projectMessage.create({
         data: {
           conversationId: conv.id, role: "assistant", content: kgAnswerText, status: "done",
           tableCitations: kgTableCitations.length ? kgTableCitations : undefined,
         },
       });
 
-      return NextResponse.json({ success: true, answer: kgAnswerText, tableCitations: kgTableCitations });
+      return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: kgAnswerText, tableCitations: kgTableCitations });
     }
 
     if (mainToolCall?.function?.name === "consult_general_knowledge") {
@@ -996,9 +996,7 @@ Response format:
       });
     }
 
-    const assistantText = stripMarkdownArtifacts(
-      (completion?.choices?.[0]?.message?.content || "").trim()
-    );
+    const assistantText = (completion?.choices?.[0]?.message?.content || "").trim();
 
     const citations = documentCitations(assistantText);
     const tableCitations = pickTableCitations(assistantText, tableCitationsSource);
@@ -1009,7 +1007,7 @@ Response format:
       data: { status: "done" },
     });
 
-    await prisma.projectMessage.create({
+    const assistantMsg = await prisma.projectMessage.create({
       data: {
         conversationId: conv.id,
         role: "assistant",
@@ -1021,7 +1019,7 @@ Response format:
       },
     });
 
-    return NextResponse.json({ success: true, answer: assistantText, chart: chartSpec, citations, tableCitations });
+    return NextResponse.json({ success: true, messageId: assistantMsg.id, answer: assistantText, chart: chartSpec, citations, tableCitations });
   } catch (err) {
     console.error("❌ ask-project:", err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

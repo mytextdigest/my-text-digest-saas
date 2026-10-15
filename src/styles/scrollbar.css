@@ -103,3 +103,11 @@
 .dark .chat-scrollbar::-webkit-scrollbar-thumb:active {
   background: rgba(156, 163, 175, 1); /* gray-400 when active */
 }
+
+/* Scrollable but with no visible scrollbar (e.g. the document page's tab row) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

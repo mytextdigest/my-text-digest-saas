@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Bot, User, X, Sparkles } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/Card"
 import MessageActions from "@/components/chat/MessageActions"
-import InsightView from "@/components/insights/InsightView"
+import MarkdownMessage from "@/components/chat/MarkdownMessage"
+import { InsightView } from "@/components/insights/InsightView"
 import DerivedTableCard, { TableCitationChips } from "@/components/tables/DerivedTableCard"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +48,7 @@ export default function ExpandedMessageModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ duration: 0.25 }}
-            className={cn("relative z-10 w-full", message.derivedTableId ? "max-w-5xl" : "max-w-3xl")}
+            className={cn("relative z-10 w-full", message.insight || message.derivedTableId ? "max-w-5xl" : "max-w-3xl")}
           >
 
             <Card className="shadow-2xl border-0 bg-white/95 dark:bg-gray-900/95 backdrop-blur">
@@ -169,6 +170,7 @@ export default function ExpandedMessageModal({
                 <MessageActions
                   content={message.content}
                   showExpand={false}
+                  align="right"
                 />
               </div>
 
@@ -179,11 +181,19 @@ export default function ExpandedMessageModal({
                 <div className="max-h-[60vh] overflow-y-auto pr-2">
 
                   {message.insight ? (
-                    <InsightView insight={message.insight} dividers={false} textSize={fontSize} />
+                    <InsightView
+                      insight={message.insight}
+                      dividers={false}
+                      textSize={fontSize}
+                      columns={["Score", "Notes"]}
+                    />
                   ) : (
-                    <div
+                    <MarkdownMessage
+                      variant="rich"
+                      content={message.content}
+                      citations={message.citations}
                       className={cn(
-                        "whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200",
+                        "leading-relaxed text-gray-800 dark:text-gray-200",
                         {
                           "text-sm": fontSize === "sm",
                           "text-base": fontSize === "md",
@@ -191,9 +201,7 @@ export default function ExpandedMessageModal({
                           "text-xl": fontSize === "xl",
                         }
                       )}
-                    >
-                      {message.content}
-                    </div>
+                    />
                   )}
 
                   {message.derivedTableId ? (

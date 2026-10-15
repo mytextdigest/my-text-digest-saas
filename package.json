@@ -6,7 +6,7 @@
     "name": "My Text Digest",
     "email": "mytextdigest@gmail.com"
   },
-  "description": "My Text Digest \u2014 SaaS for document summarization and Q&A",
+  "description": "My Text Digest — SaaS for document summarization and Q&A",
   "scripts": {
     "dev": "next dev",
     "dev:worker": "node scripts/dev-worker.mjs",
@@ -60,9 +60,11 @@
     "react": "19.1.0",
     "react-doc-viewer": "^0.1.15",
     "react-dom": "19.1.0",
+    "react-markdown": "^10.1.0",
     "react-moveable": "^0.56.0",
     "react-selecto": "^1.26.3",
     "recharts": "^3.9.2",
+    "remark-gfm": "^4.0.1",
     "stripe": "^20.1.2",
     "tailwind-merge": "^3.3.1",
     "tesseract.js": "^7.0.0",

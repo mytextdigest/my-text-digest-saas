@@ -9,7 +9,9 @@ import ApiKeyRequiredModal from '@/components/modals/ApiKeyRequiredModal';
 import { useApiKeyCheck } from '@/hooks/useApiKeyCheck';
 import { cn } from '@/lib/utils';
 
-const Layout = ({ children, className }) => {
+// fullBleed: content fills the window under the header (no centred container,
+// padding or margins) — for workspace pages like the document page.
+const Layout = ({ children, className, fullBleed = false }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -109,9 +111,15 @@ const Layout = ({ children, className }) => {
             //   className
             // )}
           >
-            <div className="w-[90%] max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full">
-              {children}
-            </div>
+            {fullBleed ? (
+              <div className="w-full h-[calc(100vh-4rem)]">
+                {children}
+              </div>
+            ) : (
+              <div className="w-[90%] max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full">
+                {children}
+              </div>
+            )}
           </motion.main>
         </div>
 

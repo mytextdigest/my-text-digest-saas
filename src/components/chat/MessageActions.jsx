@@ -2,15 +2,33 @@
 
 import { useState } from "react"
 import { Copy, Printer, Maximize2, Check } from "lucide-react"
-import { Button } from "@/components/ui/Button"
 import { copyMessage, printMessage } from "@/lib/messageActions"
 import { cn } from "@/lib/utils"
 
+function ActionButton({ title, onClick, children }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="h-7 w-7 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-700 transition-colors"
+    >
+      {children}
+    </button>
+  )
+}
+
+// Copy / print / expand toolbar under a chat message. `trailing` renders on the
+// far right of the row (e.g. answer feedback); `className` lets callers hide it
+// until hover.
 export default function MessageActions({
   content,
   onExpand,
   align = "left",
-  showExpand = true,   // ⭐ NEW PROP
+  showExpand = true,
+  trailing,
+  className,
 }) {
   const isUser = align === "right"
   const [copied, setCopied] = useState(false)
@@ -18,95 +36,31 @@ export default function MessageActions({
   const handleCopy = async () => {
     await copyMessage(content)
     setCopied(true)
-
-    setTimeout(() => {
-      setCopied(false)
-    }, 2000)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
     <div
       className={cn(
-        "flex items-center gap-1 mt-2",
-        isUser ? "justify-end" : "justify-start"
+        "flex items-center gap-2 mt-2",
+        isUser ? "justify-end" : "justify-between w-full",
+        className
       )}
     >
-      {/* ===== TOOLBAR CONTAINER ===== */}
-      <div
-        className={cn(
-          "flex items-center gap-1 px-2 py-1 rounded-lg shadow-sm",
-
-          // 👤 USER (RIGHT)
-          isUser
-            ? `
-              bg-blue-500/90
-              text-white
-              border border-blue-400/40
-            `
-            // 🤖 ASSISTANT (LEFT)
-            : `
-              bg-gray-100 dark:bg-gray-800
-              text-gray-700 dark:text-gray-200
-              border border-gray-200 dark:border-gray-700
-            `
-        )}
-      >
-
-        {/* COPY */}
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={handleCopy}
-          title="Copy"
-          className={cn(
-            "h-7 w-7",
-            isUser
-              ? "text-white hover:bg-blue-400/60"
-              : "text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700"
-          )}
-        >
-          {copied ? (
-            <Check className="w-4 h-4" />
-          ) : (
-            <Copy className="w-4 h-4" />
-          )}
-        </Button>
-
-        {/* PRINT */}
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => printMessage(content)}
-          title="Print"
-          className={cn(
-            "h-7 w-7",
-            isUser
-              ? "text-white hover:bg-blue-400/60"
-              : "text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700"
-          )}
-        >
+      <div className="flex items-center gap-0.5 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <ActionButton title={copied ? "Copied" : "Copy"} onClick={handleCopy}>
+          {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+        </ActionButton>
+        <ActionButton title="Print" onClick={() => printMessage(content)}>
           <Printer className="w-4 h-4" />
-        </Button>
-
-        {/* EXPAND (OPTIONAL) */}
+        </ActionButton>
         {showExpand && (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onExpand}
-            title="Expand Message"
-            className={cn(
-              "h-7 w-7",
-              isUser
-                ? "text-white hover:bg-blue-400/60"
-                : "text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700"
-            )}
-          >
+          <ActionButton title="Expand message" onClick={onExpand}>
             <Maximize2 className="w-4 h-4" />
-          </Button>
+          </ActionButton>
         )}
-
       </div>
+      {trailing}
     </div>
   )
 }

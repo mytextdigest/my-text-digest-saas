@@ -1,167 +1,32 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
-import { Send, MessageCircle, Trash2, Bot, User, Square, Copy, CheckCircle2, Network, GitCompare, Table as TableIcon } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { MessageCircle, Trash2, Network, GitCompare, Table as TableIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
-import MessageActions from './MessageActions';
 import ExpandedMessageModal from './ExpandedMessageModal';
-import ChartMessage from './ChartMessage';
+import ChatMessage, { AssistantPendingRow, TypingDots } from './ChatMessage';
+import ChatComposer from './ChatComposer';
+import DocumentTabs from '@/components/documents/document/DocumentTabs';
+import MarkdownMessage from './MarkdownMessage';
 import DocumentPreviewModal from '@/components/documents/DocumentPreviewModal';
 import ProjectGraphView from '@/components/graph/ProjectGraphView';
 import ComparisonsView from '@/components/documents/ComparisonsView';
-import ProjectTablesView from '@/components/tables/ProjectTablesView';
-import DerivedTableCard, { TableCitationChips } from '@/components/tables/DerivedTableCard';
-import InsightView from '@/components/insights/InsightView';
 import { useChatEngine } from './useChatEngine';
-import { MessageImageThumbs, GeneratedImage, ImageGeneratingPlaceholder, ComposerAttachments, AttachButton, DropOverlay, ChatImageViewer } from './ChatImages';
+import { GeneralKnowledgeProgressChip, GeneralKnowledgePermissionPrompt } from './ExternalKnowledgeBadge';
+import ProjectTablesView from '@/components/tables/ProjectTablesView';
+import { ImageGeneratingPlaceholder, DropOverlay, ChatImageViewer } from './ChatImages';
 import { useComposerAttachments, useChatImageActions } from './useChatImages';
-import {
-  GeneralKnowledgePermissionPrompt,
-  GeneralKnowledgeProgressChip,
-  ExternalKnowledgeBadge,
-} from './ExternalKnowledgeBadge';
-
-// Splits message text on cited document filenames and renders each one as a clickable button.
-const renderMessageContent = (content, citations, onCitationClick) => {
-  if (!citations?.length) return content;
-
-  const names = citations.map(c => c.filename).filter(Boolean);
-  if (!names.length) return content;
-
-  const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const pattern = new RegExp(`(${escaped.join('|')})`, 'g');
-
-  return content.split(pattern).map((part, i) => {
-    const citation = citations.find(c => c.filename === part);
-    if (!citation) return part;
-    return (
-      <button
-        key={i}
-        type="button"
-        onClick={() => onCitationClick(citation)}
-        className="font-medium underline decoration-dotted underline-offset-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-      >
-        {part}
-      </button>
-    );
-  });
-};
 
 const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'graph' | 'comparisons' | 'tables'
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [isClient, setIsClient] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const [copiedId, setCopiedId] = useState(null);
-
   const [expandedMessage, setExpandedMessage] = useState(null);
   const [previewDocumentId, setPreviewDocumentId] = useState(null);
-
-  const openExpanded = (message) => {
-    setExpandedMessage(message);
-  };
-  
-  const closeExpanded = () => {
-    setExpandedMessage(null);
-  };
-
-
-  // --- Fetch project messages on mount ---
-  useEffect(() => {
-    setIsClient(true);
-    if (!projectId) return;
-  
-    async function loadMessages() {
-      try {
-        const res = await fetch(`/api/projects/messages/${projectId}`, {
-          method: "GET",
-          credentials: "include"
-        }).then(r => r.json());
-  
-        if (res.success) {
-          const mapped = res.messages.map(m => ({
-            id: m.id,
-            type: m.role === "user" ? "user" : "assistant",
-            content: m.content,
-            status: m.status,
-            timestamp: new Date(m.timestamp),
-            chart: m.chart || null,
-            citations: m.citations || null,
-            externalKnowledgeQuery: m.externalKnowledgeQuery || null,
-            comparisonId: m.comparisonId || null,
-            insight: m.insight || null,
-            derivedTableId: m.derivedTableId || null,
-            tableCitations: m.tableCitations || [],
-            attachments: m.attachments || [],
-            imageProgress: m.imageProgress || null
-          }));
-          // An image still generating resumes its placeholder; the result
-          // replaces the message when it lands.
-          const last = mapped[mapped.length - 1];
-          if (last?.type === 'assistant' && last.status === 'generating') {
-            setMessages(mapped.slice(0, -1));
-            resumeImageJob({ kind: 'project', messageId: last.id, leadIn: last.content, progress: last.imageProgress });
-          } else {
-            setMessages(mapped);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading project messages:", err);
-      }
-    }
-  
-    loadMessages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-  
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-  useEffect(() => { scrollToBottom(); }, [messages]);
-
-  // --- Ask engine (send / cancel / general-knowledge confirmation) ---
-  const mapAskResult = useCallback((res) => ({
-    id: `ai-${Date.now()}-${Math.random()}`,
-    type: "assistant",
-    content: res.answer,
-    timestamp: new Date(),
-    chart: res.chart || null,
-    citations: res.citations || null,
-    externalKnowledgeQuery: res.externalKnowledgeQuery || null,
-    comparisonId: res.comparisonId || null,
-    insight: res.insight || null,
-    derivedTableId: res.derivedTableId || null,
-    tableCitations: res.tableCitations || [],
-    attachments: res.attachments || []
-  }), []);
-
-  const handleAskResult = useCallback((res) => {
-    setMessages(prev => [...prev, mapAskResult(res)]);
-  }, [mapAskResult]);
-
-  const handleAskError = useCallback((res) => {
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `ai-${Date.now()}`,
-        type: "assistant",
-        content: res?.error || "Failed to get response.",
-        timestamp: new Date()
-      }
-    ]);
-  }, []);
 
   const ask = useCallback((question, requestId, signal, { attachments = [] } = {}) => {
     return fetch("/api/projects/ask", {
@@ -172,16 +37,100 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
       body: JSON.stringify({ projectId, question, requestId, attachmentIds: attachments.map(a => a.id) })
     }).then(r => r.json());
   }, [projectId]);
+  const mapAskResult = useCallback((res) => ({
+    // The stored row id (needed for feedback); a temp id if the backend sent none.
+    id: res.messageId ?? `assistant-${Date.now()}-${Math.random()}`,
+    saved: !!res.messageId,
+    role: 'assistant',
+    content: res.answer,
+    chart: res.chart || null,
+    citations: res.citations || null,
+    insight: res.insight || null,
+    externalKnowledgeQuery: res.externalKnowledgeQuery || null,
+    comparisonId: res.comparisonId || null,
+    derivedTableId: res.derivedTableId || null,
+    tableCitations: res.tableCitations || [],
+    attachments: res.attachments || [],
+    timestamp: new Date(),
+  }), []);
+  const mapHistoryMessage = useCallback((m) => ({
+    id: m.id,
+    saved: true,
+    role: m.role === 'user' ? 'user' : 'assistant',
+    content: m.content,
+    status: m.status,
+    chart: m.chart || null,
+    citations: m.citations || null,
+    insight: m.insight || null,
+    externalKnowledgeQuery: m.externalKnowledgeQuery || null,
+    comparisonId: m.comparisonId || null,
+    derivedTableId: m.derivedTableId || null,
+    tableCitations: m.tableCitations || [],
+    attachments: m.attachments || [],
+    imageProgress: m.imageProgress || null,
+    feedback: m.feedback ?? null,
+    timestamp: new Date(m.timestamp),
+  }), []);
+
+  const handleAskResult = useCallback((res) => {
+    setMessages(prev => [...prev, mapAskResult(res)]);
+  }, [mapAskResult]);
+
+  const handleAskError = useCallback((res) => {
+    setMessages(prev => [
+      ...prev,
+      {
+        id: `assistant-error-${Date.now()}`,
+        role: 'assistant',
+        content: res?.error || "Failed to get response.",
+        timestamp: new Date()
+      }
+    ]);
+  }, []);
 
   const {
     isTyping,
-    pendingConfirmation,
     progress,
+    pendingConfirmation,
     sendMessage,
     respondToConfirmation,
-    cancelRequest,
+    cancelRequest: handleCancelRequest,
     resumeImageJob,
   } = useChatEngine({ ask, onResult: handleAskResult, onError: handleAskError });
+
+  const openExpanded = (message) => {
+    setExpandedMessage(message);
+  };
+
+  const closeExpanded = () => {
+    setExpandedMessage(null);
+  };
+
+  // --- Fetch project messages on mount ---
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/messages/${projectId}`, { method: "GET", credentials: "include" })
+      .then(r => r.json())
+      .then(res => {
+        if (!res.success) return;
+        const mapped = res.messages.map(mapHistoryMessage);
+        // An image still generating resumes its placeholder; the result
+        // replaces the message when it lands.
+        const last = mapped[mapped.length - 1];
+        if (last?.role === 'assistant' && last.status === 'generating') {
+          setMessages(mapped.slice(0, -1));
+          resumeImageJob({ kind: 'project', messageId: last.id, leadIn: last.content, progress: last.imageProgress });
+        } else {
+          setMessages(mapped);
+        }
+      })
+      .catch(err => console.error("Error loading project messages:", err));
+  }, [projectId, mapHistoryMessage, resumeImageJob]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
   const composer = useComposerAttachments({ messageTable: 'project', disabled: isTyping });
   const imageActions = useChatImageActions({ projectId, setMessages, mapAskResult, onDocumentAdded });
@@ -191,28 +140,19 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!canSend || !projectId) return;
-
+    const question = inputValue;
     const attachments = composer.readyAttachments;
-    const userMessage = {
+    setMessages(prev => [...prev, {
       id: `user-${Date.now()}`,
-      type: 'user',
-      content: inputValue,
+      role: 'user',
+      content: question,
       attachments,
       timestamp: new Date()
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    const question = inputValue;
+    }]);
     setInputValue('');
     composer.clear();
-
     sendMessage(question, { attachments });
   };
-
-  // --- Cancel Request ---
-  const handleCancelRequest = () => cancelRequest();
-
-
 
   // --- Clear project chat ---
   const handleClearChat = () => {
@@ -222,7 +162,6 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
   const handleConfirmDelete = async () => {
     if (!projectId) return;
     setIsDeleting(true);
-  
     try {
       const res = await fetch("/api/projects/clear", {
         method: "POST",
@@ -230,13 +169,12 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId })
       }).then(r => r.json());
-  
       if (res.success) {
         setMessages([]);
         setShowDeleteModal(false);
       }
     } catch (error) {
-      console.error("Error clearing chat:", error);
+      console.error('Error clearing chat:', error);
     } finally {
       setIsDeleting(false);
     }
@@ -244,20 +182,6 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
 
   const handleCancelDelete = () => {
     setShowDeleteModal(false);
-  };
-
-  const formatTime = (timestamp) => {
-    if (!isClient) return '';
-    return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
   };
 
   // Empty state component
@@ -270,411 +194,117 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
     </div>
   );
 
+  const tabs = [
+    { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'graph', label: 'Graph', icon: Network },
+    { id: 'comparisons', label: 'Comparisons', icon: GitCompare },
+    { id: 'tables', label: 'Tables', icon: TableIcon },
+  ];
+  const hasChatHistory = messages.length > 0;
+
+  // No card: a header row (tabs + clear chat on the Chat tab) that lines up with
+  // the documents column's header, over the active tab.
   return (
-    <Card className={cn(
-      "chat-container overflow-hidden relative",
-      "shadow-lg",
-      "border border-gray-200 dark:border-gray-700",
-      "bg-white dark:bg-gray-900",
-      className
-    )}>
-      {/* Header */}
-      <CardHeader className="border-b border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800 flex items-center justify-between">
-
-        <div className="flex justify-between items-center w-full">
-          {/* Left Side - Project Chat Info */}
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                <MessageCircle className="h-5 w-5 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800"></div>
-            </div>
-
-            <div className="flex flex-col">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                Project Chat
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">
-                AI-powered project assistant
-              </p>
-            </div>
-          </div>
-
-          {/* Right Side - Delete Button */}
-          <div className="relative">
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleClearChat}
-                className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </motion.div>
-          </div>
+    <div className={cn("h-full flex flex-col overflow-hidden relative bg-white dark:bg-gray-900", className)}>
+      <div className="shrink-0 h-12 flex items-center gap-2 pl-3 pr-2 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex-1 min-w-0">
+          <DocumentTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </div>
-
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 mt-4">
-          <Button
-            variant={activeTab === 'chat' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('chat')}
-            className={cn(
-              "flex items-center space-x-2",
-              activeTab === 'chat'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
+        {activeTab === 'chat' && (
+          <button
+            type="button"
+            onClick={handleClearChat}
+            disabled={!hasChatHistory}
+            title={hasChatHistory ? "Clear chat" : "No chat to clear"}
+            aria-label="Clear chat"
+            className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-40 disabled:pointer-events-none transition-colors"
           >
-            <MessageCircle className="h-4 w-4" />
-            <span>Chat</span>
-          </Button>
-          <Button
-            variant={activeTab === 'graph' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('graph')}
-            className={cn(
-              "flex items-center space-x-2",
-              activeTab === 'graph'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            <Network className="h-4 w-4" />
-            <span>Graph</span>
-          </Button>
-          <Button
-            variant={activeTab === 'comparisons' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('comparisons')}
-            className={cn(
-              "flex items-center space-x-2",
-              activeTab === 'comparisons'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            <GitCompare className="h-4 w-4" />
-            <span>Comparisons</span>
-          </Button>
-          <Button
-            variant={activeTab === 'tables' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setActiveTab('tables')}
-            className={cn(
-              "flex items-center space-x-2",
-              activeTab === 'tables'
-                ? "text-white dark:text-gray-200"
-                : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            <TableIcon className="h-4 w-4" />
-            <span>Tables</span>
-          </Button>
-        </div>
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
-        {/* Left Side - Title and Subtitle */}
-        {/* <div className="flex items-center space-x-3">
-          <div className="relative">
-            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-              <MessageCircle className="h-5 w-5 text-white" />
-            </div>
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800"></div>
-          </div>
-          <div className="flex flex-col items-center space-x-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Project Chat
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-normal">
-              AI-powered project assistant
-            </p>
-          </div>
-        </div> */}
-
-        {/* Right Side - Delete Button */}
-        {/* <div className="relative">
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClearChat}
-              className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </motion.div>
-        </div> */}
-
-
-
-      </CardHeader>
-
-      <CardContent className="chat-card-content p-0">
-        {activeTab === 'graph' ? (
-          <div className="relative w-full h-full">
+      {activeTab === 'graph' ? (
+        <div className="chat-card-content">
+          <div className="flex-1 min-h-0">
             <ProjectGraphView projectId={projectId} />
           </div>
-        ) : activeTab === 'comparisons' ? (
-          <div className="relative w-full h-full overflow-y-auto">
-            <ComparisonsView projectId={projectId} />
-          </div>
-        ) : activeTab === 'tables' ? (
-          <div className="relative w-full h-full p-4">
-            <ProjectTablesView projectId={projectId} className="h-full" />
-          </div>
-        ) : (
-          <div className="relative flex-1 min-h-0 flex flex-col" {...composer.dropHandlers}>
+        </div>
+      ) : activeTab === 'comparisons' ? (
+        <div className="chat-card-content overflow-y-auto custom-scrollbar">
+          <ComparisonsView projectId={projectId} />
+        </div>
+      ) : activeTab === 'tables' ? (
+        <div className="chat-card-content p-4">
+          <ProjectTablesView projectId={projectId} className="h-full" />
+        </div>
+      ) : (
+      <div
+        className="chat-card-content relative"
+        {...composer.dropHandlers}
+      >
         <DropOverlay visible={composer.isDraggingFiles} />
         {/* Messages Area */}
         <div className="chat-messages-area chat-scrollbar relative">
           {messages.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="p-4 space-y-6">
-              <AnimatePresence>
-                {messages.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    transition={{ duration: 0.4, ease: "easeOut" }}
-                    className={cn(
-                      "flex items-start space-x-3",
-                      message.type === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'
-                    )}
-                  >
-                    {/* Avatar */}
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.1 }}
-                      className={cn(
-                        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md",
-                        message.type === 'user'
-                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
-                          : 'bg-gradient-to-br from-purple-500 to-purple-600'
-                      )}
-                    >
-                      {message.type === 'user' ? (
-                        <User className="w-4 h-4 text-white" />
-                      ) : (
-                        <Bot className="w-4 h-4 text-white" />
-                      )}
-                    </motion.div>
+            <div className="px-5 py-5 space-y-6">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  feedbackTable="project"
+                  imageActions={imageActions}
+                  onExpand={() => openExpanded(message)}
+                  onCitationClick={(citation) => setPreviewDocumentId(citation.id)}
+                />
+              ))}
 
-                    {/* Message Bubble */}
-                    <div
-                      className={cn(
-                        "flex flex-col",
-                        message.derivedTableId || (message.type === 'assistant' && message.attachments?.length)
-                          ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
-                        message.type === 'user' ? 'items-end' : 'items-start'
-                      )}
-                    >
-
-                      {message.type === 'user' && (
-                        <MessageImageThumbs
-                          images={message.attachments}
-                          onOpen={(i) => imageActions.openViewer(message.attachments, i)}
-                        />
-                      )}
-
-                      {/* MESSAGE BUBBLE */}
-                      {(message.type !== 'user' || message.content) && (
-                      <div
-                        className={cn(
-                          "rounded-2xl px-4 py-3 overflow-hidden",
-                          message.type === 'user'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
-                        )}
-                      >
-                        {message.type === 'assistant' && message.insight ? (
-                          <InsightView insight={message.insight} dividers={false} />
-                        ) : (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
-                            {renderMessageContent(message.content, message.citations, (c) => setPreviewDocumentId(c.id))}
-                          </p>
-                        )}
-                      </div>
-                      )}
-
-                      {message.type === 'assistant' && message.attachments?.map((img) => (
-                        <GeneratedImage key={img.id} {...imageActions.generatedImageProps(img)} />
-                      ))}
-
-                      {/* ACTION BUTTONS BELOW */}
-                      {message.content && (
-                        <MessageActions
-                          content={message.content}
-                          onExpand={() => openExpanded(message)}
-                          align={message.type === 'user' ? "right" : "left"}
-                        />
-                      )}
-
-                      {message.type === 'assistant' && message.derivedTableId && (
-                        <DerivedTableCard derivedTableId={message.derivedTableId} />
-                      )}
-
-                      {message.type === 'assistant' && !message.derivedTableId && (
-                        <TableCitationChips citations={message.tableCitations} />
-                      )}
-
-                      {message.type === 'assistant' && message.chart && (
-                        <ChartMessage spec={message.chart} />
-                      )}
-
-                      {message.type === 'assistant' && (
-                        <ExternalKnowledgeBadge query={message.externalKnowledgeQuery} />
-                      )}
-
-                      {message.type === 'assistant' && message.comparisonId && (
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/compare?id=${message.comparisonId}`)}
-                          className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
-                        >
-                          <GitCompare className="h-3.5 w-3.5" />
-                          View full comparison
-                        </button>
-                      )}
-
-                    </div>
-
-
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {/* General-Knowledge Permission Prompt */}
+              {/* Permission prompt for the Ask Question tool */}
               {pendingConfirmation && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-start space-x-3"
-                >
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-white" />
-                  </div>
+                <AssistantPendingRow>
                   <GeneralKnowledgePermissionPrompt
                     query={pendingConfirmation.query}
                     onApprove={() => respondToConfirmation(true)}
                     onDecline={() => respondToConfirmation(false)}
                   />
-                </motion.div>
+                </AssistantPendingRow>
               )}
 
               {/* Typing Indicator */}
               {isTyping && !pendingConfirmation && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-start space-x-3"
-                >
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-white" />
-                  </div>
+                <AssistantPendingRow>
                   {progress?.stage === 'consulting_general_knowledge' ? (
                     <GeneralKnowledgeProgressChip />
                   ) : progress?.stage === 'generating_image' ? (
-                    <div className="flex flex-col items-start max-w-[85%] w-full">
-                      {progress.leadIn && (
-                        <div className="rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">{progress.leadIn}</p>
-                        </div>
-                      )}
+                    <>
+                      {progress.leadIn && <MarkdownMessage variant="rich" content={progress.leadIn} className="w-full text-[15px] text-gray-800 dark:text-gray-100" />}
                       <ImageGeneratingPlaceholder status={progress.status} />
-                    </div>
+                    </>
                   ) : (
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 shadow-md border border-gray-200 dark:border-gray-700">
-                      <div className="flex space-x-1">
-                        <motion.div
-                          animate={{ y: [0, -4, 0] }}
-                          transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-                          className="w-2 h-2 bg-purple-500 rounded-full"
-                        />
-                        <motion.div
-                          animate={{ y: [0, -4, 0] }}
-                          transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-                          className="w-2 h-2 bg-purple-500 rounded-full"
-                        />
-                        <motion.div
-                          animate={{ y: [0, -4, 0] }}
-                          transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-                          className="w-2 h-2 bg-purple-500 rounded-full"
-                        />
-                      </div>
-                    </div>
+                    <TypingDots />
                   )}
-                </motion.div>
+                </AssistantPendingRow>
               )}
               <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
-        {/* Input Area */}
-        <form
+        <ChatComposer
+          ref={inputRef}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
           onSubmit={handleSendMessage}
-          className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800"
-        >
-          <div className="relative">
-            <ComposerAttachments items={composer.items} onRemove={composer.removeItem} />
-            <div className={cn(
-              "flex items-center space-x-3 p-3 rounded-lg",
-              "bg-white dark:bg-gray-700",
-              "border border-gray-200 dark:border-gray-600",
-              "transition-all duration-300",
-              inputFocused && "border-blue-400 dark:border-blue-500"
-            )}>
-              <AttachButton composer={composer} disabled={isTyping} />
-              <Input
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-                onPaste={composer.handlePaste}
-                placeholder={composer.items.length ? "Say what to do with the images..." : "Ask me anything about this project..."}
-                disabled={isTyping}
-                className="flex-1 border-0 bg-transparent focus:ring-0 focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-              />
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {isTyping ? (
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={handleCancelRequest}
-                    className="bg-gray-600 hover:bg-gray-700 text-white"
-                  >
-                    <Square className="h-4 w-4 fill-current" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    size="icon"
-                    disabled={!canSend}
-                    className="bg-blue-500 hover:bg-blue-600 text-white"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                )}
-              </motion.div>
-            </div>
-
-
-          </div>
-        </form>
-          </div>
-        )}
-      </CardContent>
+          onCancel={handleCancelRequest}
+          isTyping={isTyping}
+          canSend={canSend}
+          composer={composer}
+          placeholder={composer.items.length ? "Say what to do with the images..." : "Ask me anything about this project..."}
+        />
+      </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
@@ -702,8 +332,7 @@ const ChatInterface = ({ className, projectId, onDocumentAdded }) => {
           onClose={() => setPreviewDocumentId(null)}
         />
       )}
-
-    </Card>
+    </div>
   );
 };
 

@@ -14,11 +14,18 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/utils';
 
+const FILTERS = [
+  { key: 'all',        label: 'All Documents' },
+  { key: 'starred',    label: 'Starred' },
+  { key: 'unselected', label: 'Unselected' },
+];
+
+// Upload lives in the page header; onUpload is still used by the empty state.
 export default function TopicsView({
   topics = [],
   documents = [],
-  loading = false,
   projectId,
+  loading = false,
   onUpload,
   onView,
   onDelete,
@@ -32,7 +39,7 @@ export default function TopicsView({
   onFilterChange,
   className,
 }) {
-  const [viewMode, setViewMode]       = useState('list');
+  const [viewMode, setViewMode]       = useState('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDocData, setActiveDocData] = useState(null);
 
@@ -40,16 +47,19 @@ export default function TopicsView({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
+  // Filter documents for search
   const matchesSearch = (doc) =>
     !searchQuery ||
     (doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase());
 
+  // Apply top-level filter (starred / unselected)
   const applyFilter = (doc) => {
     if (activeFilter === 'starred')    return !!doc.starred;
     if (activeFilter === 'unselected') return !doc.selected;
     return true;
   };
 
+  // Build a map of topicId → [docs]
   const topicDocMap = {};
   const unassigned  = [];
 
@@ -75,6 +85,7 @@ export default function TopicsView({
     const { docId, currentTopicId } = active.data.current;
     const targetId = over.id;
 
+    // No-op: same topic or same unassigned state
     const sourceIsUnassigned = currentTopicId === null || currentTopicId === undefined;
     if (targetId === 'unassigned' && sourceIsUnassigned) return;
     if (targetId === currentTopicId) return;
@@ -116,75 +127,76 @@ export default function TopicsView({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className={cn('flex flex-col space-y-4', className)}>
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-40">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              placeholder="Search documents..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
+      <div className={cn('h-full flex flex-col min-h-0', className)}>
+        {/* Controls: one row. The filter pills become a dropdown when the
+            column is too narrow for them (container query on this row). */}
+        <div className="@container shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="relative flex-1 min-w-28">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search documents..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+
+            <div className="hidden @xl:flex items-center gap-1 shrink-0">
+              {FILTERS.map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => onFilterChange?.(f.key)}
+                  aria-pressed={activeFilter === f.key}
+                  className={cn(
+                    'h-8 text-xs px-3 rounded-full font-medium whitespace-nowrap transition-colors',
+                    activeFilter === f.key
+                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800'
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={activeFilter}
+              onChange={e => onFilterChange?.(e.target.value)}
+              aria-label="Filter documents"
+              className="@xl:hidden shrink-0 h-8 pl-2 pr-7 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {FILTERS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+            </select>
+
+            <div className="shrink-0 flex items-center gap-0.5 border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('grid')}
+                aria-pressed={viewMode === 'grid'}
+                className={cn(
+                  'p-1.5 rounded transition-colors',
+                  viewMode === 'grid'
+                    ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                    : 'text-gray-400 hover:text-gray-600'
+                )}
+                title="Expanded view"
+              >
+                <Grid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={cn(
+                  'p-1.5 rounded transition-colors',
+                  viewMode === 'list'
+                    ? 'bg-primary-100 text-primary-600 dark:bg-primary-900/40 dark:text-primary-400'
+                    : 'text-gray-400 hover:text-gray-600'
+                )}
+                title="Compact view"
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-
-          <div className="flex items-center gap-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                'p-1.5 rounded transition-colors',
-                viewMode === 'grid'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-gray-600'
-              )}
-              title="Expanded view"
-            >
-              <Grid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                'p-1.5 rounded transition-colors',
-                viewMode === 'list'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-gray-600'
-              )}
-              title="Compact view"
-            >
-              <List className="w-4 h-4" />
-            </button>
-          </div>
-
-          <Button
-            onClick={onUpload}
-            className="h-9 text-sm bg-blue-600 hover:bg-blue-700"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload
-          </Button>
-        </div>
-
-        {/* Filter tabs */}
-        <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-2">
-          {[
-            { key: 'all',        label: 'All Documents' },
-            { key: 'starred',    label: 'Starred' },
-            { key: 'unselected', label: 'Unselected' },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => onFilterChange?.(f.key)}
-              className={cn(
-                'text-xs px-3 py-1.5 rounded-full font-medium transition-colors',
-                activeFilter === f.key
-                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
         </div>
 
         {isEmpty ? (
@@ -202,13 +214,14 @@ export default function TopicsView({
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-xs">
               Upload documents and the workspace will organise them into topics automatically.
             </p>
-            <Button onClick={onUpload} className="bg-blue-600 hover:bg-blue-700">
+            <Button variant="outline" onClick={onUpload}>
               <Upload className="w-4 h-4 mr-2" />
               Upload Documents
             </Button>
           </motion.div>
         ) : (
-          <div className="space-y-2 overflow-y-auto flex-1">
+          <div className="space-y-2 overflow-y-auto flex-1 min-h-0 p-3 bg-gray-50 dark:bg-gray-900 custom-scrollbar">
+            {/* Named topics */}
             {topics.map(topic => (
               <TopicGroup
                 key={topic.id}
@@ -222,7 +235,7 @@ export default function TopicsView({
               />
             ))}
 
-            {/* Unassigned — always rendered as drop target */}
+            {/* Unassigned documents — always rendered so it acts as a drop target */}
             {(unassigned.length > 0 || topics.length > 0) && (
               <TopicGroup
                 key="unassigned"

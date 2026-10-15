@@ -6,7 +6,6 @@ import { getUserOpenAIKey } from "@/utils/key_helper";
 import { activeRequests } from "@/lib/requestCancellation";
 import { takePendingToolCall, resolveToolCall } from "@/lib/generalKnowledgeTool";
 import { generateChartSpec } from "@/lib/chartSpec";
-import { stripMarkdownArtifacts } from "@/lib/textFormat";
 
 export async function POST(req) {
   const session = await getServerSession();
@@ -57,9 +56,7 @@ export async function POST(req) {
       completionOptions: pending.completionOptions,
     });
 
-    const assistantText = stripMarkdownArtifacts(
-      (completion?.choices?.[0]?.message?.content || "").trim()
-    );
+    const assistantText = (completion?.choices?.[0]?.message?.content || "").trim();
 
     // The chart stashed at ask-time was built from document/project context
     // alone, before we knew whether general knowledge would be consulted.
@@ -83,7 +80,7 @@ export async function POST(req) {
 
     if (pending.kind === "document") {
       await prisma.message.update({ where: { id: pending.userMsgId }, data: { status: "done" } });
-      await prisma.message.create({
+      const assistantMsg = await prisma.message.create({
         data: {
           conversationId: pending.conversationId,
           role: "assistant",
@@ -96,6 +93,7 @@ export async function POST(req) {
       return NextResponse.json({
         success: true,
         conversationId: pending.conversationId,
+        messageId: assistantMsg.id,
         answer: assistantText,
         chart: chartSpec,
         externalKnowledgeQuery: externalKnowledgeQuery || null,
@@ -112,7 +110,7 @@ export async function POST(req) {
       .map(([id, filename]) => ({ id, filename }));
 
     await prisma.projectMessage.update({ where: { id: pending.userMsgId }, data: { status: "done" } });
-    await prisma.projectMessage.create({
+    const assistantMsg = await prisma.projectMessage.create({
       data: {
         conversationId: pending.conversationId,
         role: "assistant",
@@ -125,6 +123,7 @@ export async function POST(req) {
     });
     return NextResponse.json({
       success: true,
+      messageId: assistantMsg.id,
       answer: assistantText,
       chart: chartSpec,
       citations,

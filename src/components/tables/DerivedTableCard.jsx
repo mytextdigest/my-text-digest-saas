@@ -95,15 +95,15 @@ export function TableCitationChips({ citations }) {
   const router = useRouter();
   if (!Array.isArray(citations) || !citations.length) return null;
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1.5">
+    <div className="mt-3 flex flex-wrap gap-2">
       {citations.map((c) => (
         <button
           key={c.tableId}
           onClick={() => router.push(`/document?id=${c.documentId}&tab=tables&table=${c.tableId}`)}
-          title={c.documentName || undefined}
-          className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-primary-300 hover:text-primary-700 transition-colors"
+          title={c.documentName ? `Open table · ${c.documentName}` : 'Open table'}
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-primary-300 hover:text-primary-700 dark:hover:border-primary-700 dark:hover:text-primary-300 transition-colors"
         >
-          <TableIcon className="w-3 h-3" /> {c.title || 'Table'}{c.page ? ` · p. ${c.page}` : ''}
+          <TableIcon className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" /> {c.title || 'Table'}{c.page ? ` · p. ${c.page}` : ''}
         </button>
       ))}
     </div>

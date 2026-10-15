@@ -1,38 +1,41 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence, motion } from 'framer-motion';
+import { useRouter, useSearchParams } from "next/navigation";
 import Layout from '@/components/layout/Layout';
 import TwoColumnLayout from '@/components/layout/TwoColumnLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Send, FileText, MessageCircle, AlertCircle, BarChart3, Clock, FileType, Calendar, Square, Trash2, CheckCircle2, Copy, Check, Printer, Bot, User, BookOpen, ChevronDown, ChevronRight, HelpCircle, Lightbulb, Sheet, Image as ImageIcon, Presentation, Network, Table } from 'lucide-react';
+import { ArrowLeft, MessageCircle, BarChart3, Trash2, BookOpen, Table, Presentation, Image as ImageIcon, Network } from 'lucide-react';
 import mammoth from "mammoth";
 import ClearChatDialog from "@/components/documents/ClearChatDialog";
-import { cn } from '@/lib/utils';
-import DocViewer, { DocViewerRenderers } from "react-doc-viewer";
-import MessageActions from "@/components/chat/MessageActions";
 import ExpandedMessageModal from "@/components/chat/ExpandedMessageModal";
-import ChartMessage from "@/components/chat/ChartMessage";
-import InsightView from "@/components/insights/InsightView";
-import DocumentPreviewBody from "@/components/documents/DocumentPreviewBody";
+import ChatMessage, { AssistantPendingRow, TypingDots } from "@/components/chat/ChatMessage";
+import MarkdownMessage from "@/components/chat/MarkdownMessage";
+import PdfViewer from "@/components/documents/PdfViewer";
 import FiguresGallery from "@/components/documents/FiguresGallery";
 import TablesView from "@/components/tables/TablesView";
-import { TableCitationChips } from "@/components/tables/DerivedTableCard";
 import tablesApi from "@/lib/tablesApi";
 import GraphView from "@/components/documents/GraphView";
 import SlidesView from "@/components/slides/SlidesView";
 import { useChatEngine } from "@/components/chat/useChatEngine";
-import { MessageImageThumbs, GeneratedImage, ImageGeneratingPlaceholder, ComposerAttachments, AttachButton, DropOverlay, ChatImageViewer } from "@/components/chat/ChatImages";
+import { GeneralKnowledgeProgressChip, GeneralKnowledgePermissionPrompt } from "@/components/chat/ExternalKnowledgeBadge";
+import FileViewerFrame from "@/components/documents/viewer/FileViewerFrame";
+import ImageViewer from "@/components/documents/viewer/ImageViewer";
+import { ViewerToolbarHost } from "@/components/documents/viewer/ViewerToolbar";
+import ChatComposer from "@/components/chat/ChatComposer";
+import DocumentTabs from "@/components/documents/document/DocumentTabs";
+import SummaryTab from "@/components/documents/document/SummaryTab";
+import GuideTab from "@/components/documents/document/GuideTab";
+import { ImageGeneratingPlaceholder, DropOverlay, ChatImageViewer } from "@/components/chat/ChatImages";
 import { useComposerAttachments, useChatImageActions } from "@/components/chat/useChatImages";
-import {
-  GeneralKnowledgePermissionPrompt,
-  GeneralKnowledgeProgressChip,
-  ExternalKnowledgeBadge,
-} from "@/components/chat/ExternalKnowledgeBadge";
+import { printHtml } from "@/lib/printDocument";
 
 
+
+const escapeHtml = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Wraps a document body for the system print dialog.
+const printableHtml = (title, body) => `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title>
+<style>body{font-family:Georgia,serif;max-width:760px;margin:32px auto;color:#111;line-height:1.6}img{max-width:100%}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}</style>
+</head><body>${body}</body></html>`;
 
 const WORDS_PER_PAGE = 400;
 
@@ -60,6 +63,9 @@ function DocumentContent() {
   const [tablesCount, setTablesCount] = useState(0);
   const [pinnedTable, setPinnedTable] = useState(null);
   const [pdfJump, setPdfJump] = useState(null);
+  // The left header row's slot that viewer toolbars render into.
+  const [toolbarHost, setToolbarHost] = useState(null);
+  const toolbarSlot = useMemo(() => ({ host: toolbarHost }), [toolbarHost]);
 
   const [docxHtml, setDocxHtml] = useState(null);
   const [spreadsheetData, setSpreadsheetData] = useState(null);
@@ -67,11 +73,7 @@ function DocumentContent() {
   const [conversationId, setConversationId] = useState(null);
   const [showClearDialog, setShowClearDialog] = useState(false);
 
-  const [copiedId, setCopiedId] = useState(null);
-
   const [expandedMessage, setExpandedMessage] = useState(null);
-  const [imageZoom, setImageZoom] = useState(1);
-  const [copiedSummary, setCopiedSummary] = useState(false);
 
   // Reading Guide state
   const [pagesRead, setPagesRead] = useState(0);
@@ -80,7 +82,6 @@ function DocumentContent() {
   const [expandedInsightIndex, setExpandedInsightIndex] = useState(null);
   const [detectedPage, setDetectedPage] = useState(0);
   const [pdfTotalPages, setPdfTotalPages] = useState(0);
-  const insightsEndRef = useRef(null);
   const docScrollRef = useRef(null);
   const scrollDebounceRef = useRef(null);
 
@@ -221,9 +222,6 @@ function DocumentContent() {
     }, 800);
   }, [totalPages]);
 
-  useEffect(() => {
-    insightsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [readingInsights]);
 
 
 
@@ -233,10 +231,6 @@ function DocumentContent() {
     }
   }, [id, router]);
 
-  const getS3Url = (filePath) => {
-    if (!filePath) return null;
-    return `${process.env.NEXT_PUBLIC_S3_PUBLIC_URL}/${filePath}`;
-  };
 
 
 
@@ -412,7 +406,9 @@ function DocumentContent() {
               externalKnowledgeQuery: m.externalKnowledgeQuery || null,
               insight: m.insightJson || null,
               tableCitations: m.tableCitations || [],
-              attachments: m.attachments || []
+              attachments: m.attachments || [],
+              feedback: m.feedback ?? null,
+              saved: true
             }));
 
             // An image still generating resumes its placeholder; the result
@@ -581,7 +577,9 @@ function DocumentContent() {
 
   //  --- Asking document queries ----
   const mapAskResult = useCallback((res) => ({
-    id: `assistant-${Date.now()}-${Math.random()}`,
+    // The stored row id (needed for feedback); a temp id if the backend sent none.
+    id: res.messageId ?? `assistant-${Date.now()}-${Math.random()}`,
+    saved: !!res.messageId,
     role: "assistant",
     content: res.answer,
     timestamp: new Date(),
@@ -604,7 +602,7 @@ function DocumentContent() {
     setChat(prev => [
       ...prev,
       {
-        id: Date.now(),
+        id: `assistant-error-${Date.now()}`,
         role: "assistant",
         content: `Sorry, I couldn't answer right now: ${res?.error || "unknown error"}`,
         timestamp: new Date()
@@ -702,105 +700,160 @@ function DocumentContent() {
   };
 
 
-  const handleCopySummary = () => {
-    if (!summary) return;
-    const lines = [
-      'DOCUMENT INFORMATION',
-      '====================',
-      `Type:      ${summary.documentType}`,
-      `Words:     ${summary.wordCount}`,
-      `Read Time: ${summary.estimatedReadTime} min`,
-      `Modified:  ${summary.lastModified}`,
-      '',
-      'SUMMARY',
-      '=======',
-      summary.overview,
-    ];
-    if (summary.keyPoints.length > 0) {
-      lines.push('', 'KEY POINTS', '==========');
-      summary.keyPoints.forEach((p) => lines.push(`• ${p}`));
-    }
-    navigator.clipboard.writeText(lines.join('\n')).then(() => {
-      setCopiedSummary(true);
-      setTimeout(() => setCopiedSummary(false), 2000);
-    });
-  };
-
-  const handlePrintSummary = () => {
-    if (!summary) return;
-    const keyPointsHtml = summary.keyPoints.length > 0
-      ? `<section>
-          <h2>Key Points</h2>
-          <ul>${summary.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul>
-        </section>`
-      : '';
-
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Summary — ${summary.title}</title>
-  <style>
-    body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; color: #111; line-height: 1.7; }
-    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-    .meta { font-size: 0.85rem; color: #555; margin-bottom: 2rem; }
-    section { margin-bottom: 1.8rem; }
-    h2 { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-bottom: 0.75rem; }
-    p { margin: 0; }
-    ul { padding-left: 1.25rem; margin: 0; }
-    li { margin-bottom: 0.4rem; }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1.5rem; font-size: 0.9rem; }
-    .info-grid span.label { color: #555; }
-    @media print { body { margin: 20px; } }
-  </style>
-</head>
-<body>
-  <h1>${summary.title}</h1>
-  <p class="meta">Printed on ${new Date().toLocaleDateString()}</p>
-  <section>
-    <h2>Document Information</h2>
-    <div class="info-grid">
-      <div><span class="label">Type:</span> ${summary.documentType}</div>
-      <div><span class="label">Words:</span> ${summary.wordCount}</div>
-      <div><span class="label">Read Time:</span> ${summary.estimatedReadTime} min</div>
-      <div><span class="label">Modified:</span> ${summary.lastModified}</div>
-    </div>
-  </section>
-  <section>
-    <h2>Summary</h2>
-    <p>${summary.overview}</p>
-  </section>
-  ${keyPointsHtml}
-</body>
-</html>`;
-
-    const win = window.open('', '_blank');
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-
-
-
   const renderDocument = () => {
     if (!doc) return null;
+
+    const ext = doc.filename.split(".").pop().toLowerCase();
+
+    if (ext === "txt") {
+      return (
+        <FileViewerFrame
+          ref={docScrollRef}
+          onScroll={handleDocScroll}
+          docId={doc.id}
+          fileUrl={doc.fileUrl}
+          onPrint={() => printHtml(printableHtml(doc.filename, `<pre style="white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(doc.content)}</pre>`))}
+        >
+          <pre className="whitespace-pre-wrap text-gray-900 dark:text-gray-100 p-6 font-mono text-sm leading-relaxed">
+            {doc.content}
+          </pre>
+        </FileViewerFrame>
+      );
+    }
+
+    if (ext === "pdf") {
+      return (
+        <div className="w-full h-full overflow-hidden">
+          <PdfViewer
+            fileUrl={doc.fileUrl}
+            docId={doc.id}
+            filename={doc.filename}
+            onPageChange={handleDocPageChange}
+            onTotalPages={setPdfTotalPages}
+            jumpTo={pdfJump}
+          />
+        </div>
+      );
+    }
+
+    if (ext === "docx") {
+      return (
+        <FileViewerFrame
+          ref={docScrollRef}
+          onScroll={handleDocScroll}
+          docId={doc.id}
+          fileUrl={doc.fileUrl}
+          onPrint={docxHtml ? () => printHtml(printableHtml(doc.filename, docxHtml)) : undefined}
+        >
+          <div
+            className="prose prose-gray dark:prose-invert max-w-none p-6"
+            dangerouslySetInnerHTML={{ __html: docxHtml || "<p>Loading...</p>" }}
+          />
+        </FileViewerFrame>
+      );
+    }
+
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)) {
+      return <ImageViewer docId={doc.id} fileUrl={doc.fileUrl} filename={doc.filename} />;
+    }
+
+    if (ext === "xlsx" || ext === "xls" || ext === "csv") {
+      if (!spreadsheetData) {
+        return (
+          <div className="w-full h-full flex items-center justify-center">
+            <p className="text-gray-400 dark:text-gray-500 text-sm">Loading spreadsheet…</p>
+          </div>
+        );
+      }
+
+      const activeSheet = spreadsheetData[activeSheetIndex];
+
+      return (
+        <FileViewerFrame
+          ref={docScrollRef}
+          onScroll={handleDocScroll}
+          docId={doc.id}
+          fileUrl={doc.fileUrl}
+          header={spreadsheetData.length > 1 && (
+            <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto shrink-0">
+              {spreadsheetData.map((sheet, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveSheetIndex(i)}
+                  className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                    i === activeSheetIndex
+                      ? "border-primary-500 text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20"
+                      : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {sheet.name}
+                </button>
+              ))}
+            </div>
+          )}
+          footer={
+            <div className="shrink-0 px-4 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-3">
+              <span>{activeSheet?.headers?.length ?? 0} columns</span>
+              <span>•</span>
+              <span>
+                {activeSheet?.totalRows ?? 0} rows
+                {activeSheet?.totalRows > 1000 ? " (showing first 1,000)" : ""}
+              </span>
+            </div>
+          }
+        >
+            {activeSheet?.headers?.length > 0 ? (
+              <table className="min-w-full text-xs border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 w-10 shrink-0">
+                      #
+                    </th>
+                    {activeSheet.headers.map((h, i) => (
+                      <th
+                        key={i}
+                        className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeSheet.rows.map((row, rowIdx) => (
+                    <tr
+                      key={rowIdx}
+                      className={rowIdx % 2 === 0 ? "bg-white dark:bg-gray-900" : "bg-gray-50 dark:bg-gray-800/50"}
+                    >
+                      <td className="px-3 py-1.5 text-gray-400 dark:text-gray-500 border-r border-gray-100 dark:border-gray-800 text-right select-none">
+                        {rowIdx + 2}
+                      </td>
+                      {activeSheet.headers.map((h, colIdx) => (
+                        <td
+                          key={colIdx}
+                          className="px-3 py-1.5 text-gray-800 dark:text-gray-200 border-r border-gray-100 dark:border-gray-800 whitespace-nowrap max-w-xs truncate"
+                          title={String(row[h] ?? "")}
+                        >
+                          {String(row[h] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-400 dark:text-gray-500 text-sm">This sheet is empty</p>
+              </div>
+            )}
+        </FileViewerFrame>
+      );
+    }
+
     return (
-      <DocumentPreviewBody
-        doc={doc}
-        docxHtml={docxHtml}
-        spreadsheetData={spreadsheetData}
-        activeSheetIndex={activeSheetIndex}
-        onActiveSheetChange={setActiveSheetIndex}
-        imageZoom={imageZoom}
-        onImageZoomChange={setImageZoom}
-        scrollRef={docScrollRef}
-        onScroll={handleDocScroll}
-        onPdfPageChange={handleDocPageChange}
-        onPdfTotalPages={setPdfTotalPages}
-        pdfJumpTo={pdfJump}
-      />
+      <div className="w-full h-full flex items-center justify-center">
+        <p className="text-gray-500 dark:text-gray-400">Unsupported file type: {ext}</p>
+      </div>
     );
   };
 
@@ -821,315 +874,143 @@ function DocumentContent() {
     );
   }
 
-  // Document Preview Panel (Left Column)
+  // Document Preview Panel (Left Column): a header row (Back, filename, and the
+  // viewer's toolbar, which portals into toolbarHost) over the frameless viewer.
   const documentPanel = (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="h-full flex flex-col space-y-4 pt-2.5"
-    >
-      {/* Header with Back Button */}
-      <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          onClick={() => {
-            if (doc?.projectId) {
-              router.push(`/project?id=${doc.projectId}`);
-            } else {
-              router.push("/dashboard/");
-            }
-          }}
-          className="flex items-center space-x-2 text-gray-600 dark:text-gray-400"
-          style={{
-            '--hover-text-color': '#000000',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#000000';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = '';
-          }}
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+      <div className="@container shrink-0 h-12 flex items-center gap-2 pl-3 pr-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          type="button"
+          onClick={() => router.push(doc?.projectId ? `/project?id=${doc.projectId}` : "/dashboard/")}
+          title="Back to documents"
+          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-gray-800 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Back to Documents</span>
-        </Button>
-      </div>
-
-      {/* Document Info */}
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+          <span>Back</span>
+        </button>
+        <h1 className="flex-1 min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-gray-100" title={doc.filename}>
           {doc.filename}
         </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Document Preview
-        </p>
+        <div ref={setToolbarHost} className="shrink-0 flex items-center" />
       </div>
 
-      {/* Document Content */}
       <div className="flex-1 min-h-0">
-        <Card className="h-full">
-          <CardContent className="p-0 h-full">
-            <div className="h-full overflow-hidden">
-              {renderDocument()}
-            </div>
-          </CardContent>
-        </Card>
+        <ViewerToolbarHost.Provider value={toolbarSlot}>
+          {renderDocument()}
+        </ViewerToolbarHost.Provider>
       </div>
-    </motion.div>
+    </div>
   );
 
-  // Chat Interface Panel (Right Column)
+  const hasChatHistory = chat.some(msg => msg.role !== "system");
+  const tabs = [
+    { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'summary', label: 'Summary', icon: BarChart3 },
+    { id: 'slides', label: 'Slides', icon: Presentation },
+    !noGuideTab && { id: 'guide', label: 'Pagewise Summary', icon: BookOpen },
+    showFiguresTab && { id: 'figures', label: 'Figures', icon: ImageIcon },
+    showTablesTab && { id: 'tables', label: 'Tables', icon: Table, count: tablesCount },
+    { id: 'graph', label: 'Graph', icon: Network },
+  ].filter(Boolean);
+
+  // Analysis Panel (Right Column): tabs (+ clear chat on the Chat tab) in a
+  // header row that lines up with the document's, over the active tab — no card.
   const chatPanel = (
-    <div className="chat-container">
-      <Card className="chat-container">
-        <CardHeader className="flex-shrink-0 pb-2">
-        <div className="flex items-center justify-between w-full mb-4">
-            <CardTitle className="flex items-center space-x-2">
-              <MessageCircle className="h-5 w-5 text-primary-600" />
-              <span>Document Analysis</span>
-            </CardTitle>
-            
-            {/* Clear Chat Button - Only show when chat has messages */}
-            {chat.some(msg => msg.role !== "system") && (
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleClearChat}
-                  className="hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </motion.div>
-            )}
-          </div>
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+      <div className="shrink-0 h-12 flex items-center gap-2 pl-3 pr-2 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex-1 min-w-0">
+          <DocumentTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+        </div>
+        {activeTab === 'chat' && (
+          <button
+            type="button"
+            onClick={handleClearChat}
+            disabled={!hasChatHistory}
+            title={hasChatHistory ? "Clear chat" : "No chat to clear"}
+            aria-label="Clear chat"
+            className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
-          {/* Tab Navigation */}
-          <div className="flex space-x-1 mt-4">
-            <Button
-              variant={activeTab === 'chat' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('chat')}
-              className={cn(
-                "flex items-center space-x-2",
-                activeTab === 'chat'
-                  ? "text-white dark:text-gray-200"
-                  : "text-gray-600 dark:text-gray-400"
-              )}
-            >
-              <MessageCircle className="h-4 w-4" />
-              <span>Chat</span>
-            </Button>
-            <Button
-              variant={activeTab === 'summary' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('summary')}
-              className={cn(
-                "flex items-center space-x-2",
-                activeTab === 'summary'
-                  ? "text-white dark:text-gray-200"
-                  : "text-gray-600 dark:text-gray-400"
-              )}
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span>Summary</span>
-            </Button>
-            {!noGuideTab && (
-              <Button
-                variant={activeTab === 'guide' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveTab('guide')}
-                className={cn(
-                  "flex items-center space-x-2",
-                  activeTab === 'guide'
-                    ? "text-white dark:text-gray-200"
-                    : "text-gray-600 dark:text-gray-400"
-                )}
-              >
-                <BookOpen className="h-4 w-4" />
-                <span>Pagewise Summary</span>
-              </Button>
-            )}
-            {showFiguresTab && (
-              <Button
-                variant={activeTab === 'figures' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveTab('figures')}
-                className={cn(
-                  "flex items-center space-x-2",
-                  activeTab === 'figures'
-                    ? "text-white dark:text-gray-200"
-                    : "text-gray-600 dark:text-gray-400"
-                )}
-              >
-                <ImageIcon className="h-4 w-4" />
-                <span>Figures</span>
-              </Button>
-            )}
-            {showTablesTab && (
-              <Button
-                variant={activeTab === 'tables' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveTab('tables')}
-                className={cn(
-                  "flex items-center space-x-2",
-                  activeTab === 'tables'
-                    ? "text-white dark:text-gray-200"
-                    : "text-gray-600 dark:text-gray-400"
-                )}
-              >
-                <Table className="h-4 w-4" />
-                <span>Tables</span>
-                {tablesCount > 0 && (
-                  <span className={cn(
-                    "text-[10px] px-1.5 rounded-full",
-                    activeTab === 'tables' ? "bg-white/20" : "bg-gray-200 dark:bg-gray-700"
-                  )}>
-                    {tablesCount}
-                  </span>
-                )}
-              </Button>
-            )}
-            <Button
-              variant={activeTab === 'graph' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('graph')}
-              className={cn(
-                "flex items-center space-x-2",
-                activeTab === 'graph'
-                  ? "text-white dark:text-gray-200"
-                  : "text-gray-600 dark:text-gray-400"
-              )}
-            >
-              <Network className="h-4 w-4" />
-              <span>Graph</span>
-            </Button>
-            <Button
-              variant={activeTab === 'slides' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveTab('slides')}
-              className={cn(
-                "flex items-center space-x-2",
-                activeTab === 'slides'
-                  ? "text-white dark:text-gray-200"
-                  : "text-gray-600 dark:text-gray-400"
-              )}
-            >
-              <Presentation className="h-4 w-4" />
-              <span>Slides</span>
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="chat-card-content p-0">
+      <div className="chat-card-content">
           {/* Content Area - Chat, Summary, or Reading Guide */}
           {activeTab === 'guide' ? (
-            <div className="flex flex-col h-full">
-              {/* Progress bar */}
-              {totalPages > 0 && (
-                <div className="shrink-0 px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700">
-                  <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                    <span>{pagesRead === 0 ? 'Not started' : `Page ${pagesRead} of ${totalPages} read`}</span>
-                    <span>{Math.round((pagesRead / totalPages) * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-1.5 bg-primary-600 rounded-full transition-all duration-500"
-                      style={{ width: `${(pagesRead / totalPages) * 100}%` }}
-                    />
-                  </div>
-                </div>
+            <GuideTab
+              totalPages={totalPages}
+              pagesRead={pagesRead}
+              readingInsights={readingInsights}
+              isLoadingPageInsight={isLoadingPageInsight}
+              expandedInsightIndex={expandedInsightIndex}
+              setExpandedInsightIndex={setExpandedInsightIndex}
+              detectedPage={detectedPage}
+            />
+          ) : activeTab === 'chat' ? (
+            <div className="chat-container relative" {...composer.dropHandlers}>
+              <DropOverlay visible={composer.isDraggingFiles} />
+              {/* Messages Area - Properly constrained with scrolling */}
+              <div className="chat-messages-area px-5 py-5 space-y-6 bg-white dark:bg-gray-900 chat-scrollbar">
+              {chat.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  feedbackTable="document"
+                  imageActions={imageActions}
+                  onExpand={() => openExpanded(message)}
+                />
+              ))}
+
+              {pendingConfirmation && (
+                <AssistantPendingRow>
+                  <GeneralKnowledgePermissionPrompt
+                    query={pendingConfirmation.query}
+                    onApprove={() => respondToConfirmation(true)}
+                    onDecline={() => respondToConfirmation(false)}
+                  />
+                </AssistantPendingRow>
               )}
 
-              {/* Scrollable insight cards */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900/50">
-                {readingInsights.length === 0 && !isLoadingPageInsight && (
-                  <div className="flex flex-col items-center justify-center h-full text-center py-12 space-y-3">
-                    <BookOpen className="h-10 w-10 text-gray-300 dark:text-gray-600" />
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Progressive reading mode</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 max-w-[220px]">
-                      Start reading the document. Insights and reflection questions unlock automatically as you scroll through each page.
-                    </p>
-                  </div>
-                )}
-
-                {readingInsights.map((insight, idx) => {
-                  const isExpanded = expandedInsightIndex === idx;
-                  return (
-                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                      <button
-                        onClick={() => setExpandedInsightIndex(isExpanded ? null : idx)}
-                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                      >
-                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Page {insight.page}</span>
-                        {isExpanded
-                          ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
-                          : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
-                      </button>
-
-                      {isExpanded && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-gray-100 dark:border-gray-700">
-                          {insight.keyPoints.length > 0 && (
-                            <div className="pt-3">
-                              <div className="flex items-center space-x-1.5 mb-2">
-                                <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Key Points</span>
-                              </div>
-                              <ul className="space-y-1.5">
-                                {insight.keyPoints.map((point, i) => (
-                                  <li key={i} className="flex items-start space-x-2">
-                                    <div className="w-1.5 h-1.5 bg-primary-500 rounded-full mt-1.5 shrink-0" />
-                                    <span className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {insight.questions.length > 0 && (
-                            <div>
-                              <div className="flex items-center space-x-1.5 mb-2">
-                                <HelpCircle className="h-3.5 w-3.5 text-blue-500" />
-                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">questions to Reflect</span>
-                              </div>
-                              <ol className="space-y-2">
-                                {insight.questions.map((q, i) => (
-                                  <li key={i} className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed pl-3 border-l-2 border-blue-200 dark:border-blue-800">{q}</li>
-                                ))}
-                              </ol>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {isLoadingPageInsight && (
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-4 flex items-center space-x-3">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600 shrink-0" />
-                    <span className="text-sm text-gray-500 dark:text-gray-400">Generating insights for page {pagesRead + 1}…</span>
-                  </div>
-                )}
-
-                <div ref={insightsEndRef} />
+              {isTyping && !pendingConfirmation && (
+                <AssistantPendingRow>
+                  {progress?.stage === 'consulting_general_knowledge' ? (
+                    <GeneralKnowledgeProgressChip />
+                  ) : progress?.stage === 'generating_image' ? (
+                    <>
+                      {progress.leadIn && <MarkdownMessage variant="rich" content={progress.leadIn} className="w-full text-[15px] text-gray-800 dark:text-gray-100" />}
+                      <ImageGeneratingPlaceholder status={progress.status} />
+                    </>
+                  ) : (
+                    <TypingDots />
+                  )}
+                </AssistantPendingRow>
+              )}
+                <div ref={chatEndRef} />
               </div>
 
-              {/* Status footer */}
-              <div className="shrink-0 px-4 py-3 border-t border-gray-200 dark:border-gray-700 text-center">
-                {isLoadingPageInsight ? (
-                  <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary-600" />
-                    <span>Generating insights for page {pagesRead + 1}…</span>
-                  </div>
-                ) : pagesRead > 0 && pagesRead >= totalPages ? (
-                  <p className="text-sm text-gray-500">You&apos;ve finished the document.</p>
-                ) : detectedPage > 0 ? (
-                  <p className="text-xs text-gray-400">On page {detectedPage}{totalPages > 0 ? ` of ${totalPages}` : ''}</p>
-                ) : (
-                  <p className="text-xs text-gray-400">Scroll through the document — insights appear automatically.</p>
-                )}
-              </div>
+              <ChatComposer
+                ref={inputRef}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onSubmit={handleAsk}
+                onCancel={handleCancelRequest}
+                isTyping={isTyping}
+                canSend={canAsk}
+                composer={composer}
+                placeholder={composer.items.length ? "Say what to do with the images..." : "Ask about this document..."}
+                chips={pinnedTable ? [{
+                  key: 'pinned-table',
+                  icon: Table,
+                  label: pinnedTable.title,
+                  title: `Asking about ${pinnedTable.title} — the whole table is included in your questions`,
+                  onRemove: () => setPinnedTable(null),
+                }] : []}
+              />
+            </div>
+          ) : activeTab === 'slides' ? (
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
+              <SlidesView docId={id} />
             </div>
           ) : activeTab === 'figures' ? (
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
@@ -1146,442 +1027,33 @@ function DocumentContent() {
               />
             </div>
           ) : activeTab === 'graph' ? (
-            <div className="relative flex-1 h-full bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-900/50">
               <GraphView docId={id} />
-            </div>
-          ) : activeTab === 'slides' ? (
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
-              <SlidesView docId={id} />
-            </div>
-          ) : activeTab === 'chat' ? (
-            <div className="chat-container relative" {...composer.dropHandlers}>
-              <DropOverlay visible={composer.isDraggingFiles} />
-              <div className="chat-messages-area p-4 space-y-4 bg-gray-50 dark:bg-gray-900/50 chat-scrollbar">
-                {chat.map((message) => (
-                  <motion.div
-                    key={message.id}
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                    transition={{ duration: 0.4, ease: "easeOut" }}
-                    className={cn(
-                      "flex items-start space-x-3",
-                      message.role === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'
-                    )}
-                  >
-                    {/* Avatar */}
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.1 }}
-                      className={cn(
-                        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md",
-                        message.role === 'user'
-                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
-                          : 'bg-gradient-to-br from-purple-500 to-purple-600'
-                      )}
-                    >
-                      {message.role === 'user' ? (
-                        <User className="w-4 h-4 text-white" />
-                      ) : (
-                        <Bot className="w-4 h-4 text-white" />
-                      )}
-                    </motion.div>
-
-                    {/* Message Bubble */}
-                    <div
-                      className={cn(
-                        "flex flex-col",
-                        message.role === 'assistant' && message.attachments?.length
-                          ? "min-w-0 max-w-full w-full" : "max-w-[85%]",
-                        message.role === 'user' ? 'items-end' : 'items-start'
-                      )}
-                    >
-
-                      {message.role === 'user' && (
-                        <MessageImageThumbs
-                          images={message.attachments}
-                          onOpen={(i) => imageActions.openViewer(message.attachments, i)}
-                        />
-                      )}
-
-                      {/* MESSAGE BUBBLE */}
-                      {(message.role !== 'user' || message.content) && (
-                      <div
-                        className={cn(
-                          "rounded-2xl px-4 py-3 overflow-hidden",
-                          message.role === 'user'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
-                        )}
-                      >
-                        {message.role === 'assistant' && message.insight ? (
-                          <InsightView insight={message.insight} dividers={false} />
-                        ) : (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">
-                            {message.content}
-                          </p>
-                        )}
-                      </div>
-                      )}
-
-                      {message.role === 'assistant' && message.attachments?.map((img) => (
-                        <GeneratedImage key={img.id} {...imageActions.generatedImageProps(img)} />
-                      ))}
-
-                      {/* ACTION BUTTONS BELOW */}
-                      {message.content && (
-                        <MessageActions
-                          content={message.content}
-                          onExpand={() => openExpanded(message)}
-                          align={message.role === 'user' ? "right" : "left"}
-                        />
-                      )}
-
-                      {message.role === 'assistant' && (
-                        <TableCitationChips citations={message.tableCitations} />
-                      )}
-
-                      {message.role === 'assistant' && message.chart && (
-                        <ChartMessage spec={message.chart} />
-                      )}
-
-                      {message.role === 'assistant' && (
-                        <ExternalKnowledgeBadge query={message.externalKnowledgeQuery} />
-                      )}
-
-                    </div>
-
-
-                  </motion.div>
-                ))}
-
-                {pendingConfirmation && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start"
-                  >
-                    <GeneralKnowledgePermissionPrompt
-                      query={pendingConfirmation.query}
-                      onApprove={() => respondToConfirmation(true)}
-                      onDecline={() => respondToConfirmation(false)}
-                    />
-                  </motion.div>
-                )}
-
-                {isTyping && !pendingConfirmation && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start"
-                  >
-                    {progress?.stage === 'consulting_general_knowledge' ? (
-                      <GeneralKnowledgeProgressChip />
-                    ) : progress?.stage === 'generating_image' ? (
-                      <div className="flex flex-col items-start max-w-[85%] w-full">
-                        {progress.leadIn && (
-                          <div className="rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700">
-                            <p className="whitespace-pre-wrap text-sm leading-relaxed break-words overflow-wrap-anywhere">{progress.leadIn}</p>
-                          </div>
-                        )}
-                        <ImageGeneratingPlaceholder status={progress.status} />
-                      </div>
-                    ) : (
-                      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-3 rounded-lg">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                          <div
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.1s" }}
-                          ></div>
-                          <div
-                            className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.2s" }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Chat-specific footer - Fixed at bottom */}
-              {/* {chat.some(msg => msg.role !== "system") && (
-                <div className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-yellow-50 dark:bg-yellow-950/30 flex justify-between items-center">
-                  <div className="flex items-center space-x-2 text-yellow-700 dark:text-yellow-300">
-                    <AlertCircle className="h-4 w-4" />
-                    <p className="text-sm font-medium">You can clear this chat to start fresh.</p>
-                  </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleClearChat}
-                  >
-                    Clear Chat
-                  </Button>
-                </div>
-              )} */}
-
-              {/* Input Area - Fixed at bottom */}
-              <form onSubmit={handleAsk} className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700">
-                {pinnedTable && (
-                  <div className="mb-2 flex items-center gap-1.5 text-xs text-primary-700 dark:text-primary-300">
-                    <Table className="h-3.5 w-3.5" />
-                    <span>Asking about <strong>{pinnedTable.title}</strong> — the whole table is included in your questions.</span>
-                    <button type="button" onClick={() => setPinnedTable(null)} className="ml-1 text-gray-400 hover:text-gray-700" title="Stop including this table">✕</button>
-                  </div>
-                )}
-                <ComposerAttachments items={composer.items} onRemove={composer.removeItem} />
-                <div className="flex items-center space-x-2">
-                  <AttachButton composer={composer} disabled={isTyping} className="shrink-0" />
-                  <Input
-                    ref={inputRef}
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    onPaste={composer.handlePaste}
-                    placeholder={composer.items.length ? "Say what to do with the images..." : "Ask about this document..."}
-                    className="flex-1"
-                    disabled={isTyping}
-                  />
-                  {isTyping ? (
-                    <Button
-                      type="button"
-                      size="icon"
-                      onClick={handleCancelRequest}
-                      className="flex-shrink-0 bg-gray-600 hover:bg-gray-700 text-white"
-                    >
-                      <Square className="h-4 w-4 fill-current" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="submit"
-                      size="icon"
-                      disabled={!canAsk}
-                      className="flex-shrink-0"
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </form>
             </div>
           ) : (
             /* Summary Area */
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50 custom-scrollbar">
-              {/* CASE 1: Generating */}
-              {doc?.status === "summarizing" || isGeneratingSummary ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      Generating summary please wait
-                      {/* Generating summary in background... */}
-                    </p>
-                  </div>
-                </div>
-              ) : /* CASE 2: Ready */ summary ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="space-y-6"
-                >
-                  {/* Document Info */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                      Document Information
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="flex items-center space-x-2">
-                        <FileType className="h-4 w-4 text-gray-500" />
-                        <span className="text-gray-600 dark:text-gray-400">
-                          Type:
-                        </span>
-                        <span className="font-medium">
-                          {summary.documentType}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <BarChart3 className="h-4 w-4 text-gray-500" />
-                        <span className="text-gray-600 dark:text-gray-400">
-                          Words:
-                        </span>
-                        <span className="font-medium">{summary.wordCount}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Clock className="h-4 w-4 text-gray-500" />
-                        <span className="text-gray-600 dark:text-gray-400">
-                          Read Time:
-                        </span>
-                        <span className="font-medium">
-                          {summary.estimatedReadTime} min
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Calendar className="h-4 w-4 text-gray-500" />
-                        <span className="text-gray-600 dark:text-gray-400">
-                          Modified:
-                        </span>
-                        <span className="font-medium">
-                          {summary.lastModified}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Sheets Breakdown (spreadsheet documents only) */}
-                  {isSpreadsheet && sheets.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center space-x-2">
-                        <Sheet className="h-4 w-4 text-gray-500" />
-                        <span>Sheets ({sheets.length})</span>
-                      </h3>
-                      <div className="space-y-3">
-                        {sheets.map((sheet) => (
-                          <div
-                            key={sheet.sheetName}
-                            className="rounded-md border border-gray-200 dark:border-gray-700 p-3"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                                {sheet.sheetName}
-                              </span>
-                              {sheet.rowSpan && (
-                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  Rows {sheet.rowSpan}
-                                </span>
-                              )}
-                            </div>
-                            {sheet.columnHeaders.length > 0 && (
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
-                                Columns: {sheet.columnHeaders.join(', ')}
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Overview */}
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                      Summary
-                    </h3>
-                    <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {summary.overview}
-                    </p>
-                  </div>
-
-                  {/* Key Points */}
-                  {summary.keyPoints.length > 0 && (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                        Key Points
-                      </h3>
-                      <ul className="space-y-2">
-                        {summary.keyPoints.map((point, index) => (
-                          <li
-                            key={index}
-                            className="flex items-start space-x-2"
-                          >
-                            <div className="w-2 h-2 bg-primary-600 rounded-full mt-2 flex-shrink-0"></div>
-                            <span className="text-gray-700 dark:text-gray-300 text-sm">
-                              {point}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopySummary}
-                      className="flex items-center space-x-2"
-                    >
-                      {copiedSummary ? (
-                        <Check className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                      <span>{copiedSummary ? 'Copied!' : 'Copy'}</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePrintSummary}
-                      className="flex items-center space-x-2"
-                    >
-                      <Printer className="h-4 w-4" />
-                      <span>Print</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={generateSummary}
-                      className="flex items-center space-x-2"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Regenerate</span>
-                    </Button>
-                  </div>
-                </motion.div>
-              ) : /* CASE 3: Error */ doc?.status === "error" ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">
-                      Failed to generate summary
-                    </p>
-                    <Button
-                      onClick={generateSummary}
-                      className="flex items-center space-x-2"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Try Again</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                /* CASE 4: No summary yet */
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">
-                      No summary available
-                    </p>
-                    <Button
-                      onClick={generateSummary}
-                      className="flex items-center space-x-2"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Generate Summary</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <SummaryTab
+              doc={doc}
+              summary={summary}
+              isGeneratingSummary={isGeneratingSummary}
+              isSpreadsheet={isSpreadsheet}
+              sheets={sheets}
+              onRegenerate={generateSummary}
+            />
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 
   return (
-    <Layout>
-      <div className="h-[calc(100vh-8rem)]">
+    <Layout fullBleed>
+      <div className="h-full">
         <TwoColumnLayout
           leftColumn={documentPanel}
           rightColumn={chatPanel}
           leftTitle="Document Preview"
           rightTitle="Chat"
+          resizable="document"
         />
       </div>
       {showClearDialog && (

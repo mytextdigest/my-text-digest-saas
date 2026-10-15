@@ -8,7 +8,7 @@ const buttonVariants = {
   
   // Variants
   variants: {
-    default: "bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 shadow-sm hover:shadow-md",
+    default: "bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 shadow-sm hover:shadow-md transition-colors duration-200",
     destructive: "bg-error-600 text-white hover:bg-error-700 active:bg-error-800 shadow-sm hover:shadow-md",
     outline: "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 shadow-sm",
     secondary: "bg-secondary-100 text-secondary-900 hover:bg-secondary-200 active:bg-secondary-300",
