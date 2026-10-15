@@ -236,17 +236,24 @@ export function ComposerAttachments({ items, onRemove }) {
 }
 
 // Paperclip button + its hidden file input. `composer` is useComposerAttachments().
+// The hidden file input behind composer.openFilePicker(); render it once per composer.
+export function AttachFileInput({ composer }) {
+  return (
+    <input
+      ref={composer.fileInputRef}
+      type="file"
+      accept={ATTACHABLE_TYPES.join(',')}
+      multiple
+      className="hidden"
+      onChange={(e) => { composer.addFiles(e.target.files); e.target.value = ''; }}
+    />
+  );
+}
+
 export function AttachButton({ composer, disabled, className }) {
   return (
     <>
-      <input
-        ref={composer.fileInputRef}
-        type="file"
-        accept={ATTACHABLE_TYPES.join(',')}
-        multiple
-        className="hidden"
-        onChange={(e) => { composer.addFiles(e.target.files); e.target.value = ''; }}
-      />
+      <AttachFileInput composer={composer} />
       <button
         type="button"
         onClick={composer.openFilePicker}

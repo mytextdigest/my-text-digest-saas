@@ -47,6 +47,7 @@ export async function GET(req, { params }) {
       insight: m.insightJson || null,
       derivedTableId: m.derivedTableId || null,
       tableCitations: m.tableCitations || [],
+      feedback: m.feedback ?? null,
       attachments: attachments[m.id] || [],
       imageProgress: m.status === "generating" ? m.imageProgress : null,
     }));

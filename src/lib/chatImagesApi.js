@@ -88,7 +88,7 @@ async function improveChatImage({ attachmentId, quality, requestId = null }) {
         continue;
       }
       if (status.status === "generating") continue;
-      if (status.status === "done") return { success: true, answer: status.answer, attachments: status.attachments || [] };
+      if (status.status === "done") return { success: true, messageId: job.messageId, answer: status.answer, attachments: status.attachments || [] };
       if (status.status === "cancelled") return { success: false, cancelled: true };
       return { success: false, error: status.error || "Could not redraw the image." };
     }

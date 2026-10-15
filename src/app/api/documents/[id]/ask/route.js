@@ -15,7 +15,6 @@ import {
 } from "@/lib/generalKnowledgeTool";
 import { QUERY_KNOWLEDGE_GRAPH_TOOL, runKnowledgeGraphQuery } from "@/lib/graph/queryTool";
 import { detectAnalysisIntent, buildAnalysis } from "@/lib/analysis";
-import { stripMarkdownArtifacts } from "@/lib/textFormat";
 import { FIND_TABLES_TOOL, runFindTablesTool } from "@/lib/tables/queryTool";
 import { buildTableContext, pickTableCitations, tableChartExtraData, addToolCitations } from "@/lib/tables/chatContext";
 import { bindChatAttachments } from "@/lib/chatImages/server";
@@ -269,7 +268,7 @@ export async function POST(req, { params }) {
 
       if (analysisResult) {
         await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
-        await prisma.message.create({
+        const assistantMsg = await prisma.message.create({
           data: {
             conversationId,
             role: "assistant",
@@ -282,6 +281,7 @@ export async function POST(req, { params }) {
         return NextResponse.json({
           success: true,
           conversationId,
+          messageId: assistantMsg.id,
           answer: analysisResult.fallbackText,
           insight: analysisResult.insight,
         });
@@ -392,7 +392,9 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
 - If the document only partially covers an in-scope question, give the closest accurate
   information it contains rather than saying "I don't know" — this fallback does NOT apply
   when the missing piece is external/comparison data; that case is handled by STEP 0 above.
-- Plain text only (no markdown, no bullets, no special formatting).
+- You may use light markdown formatting where it aids clarity — **bold** for key terms or
+  figures, short bullet lists for multiple items. Keep it natural and sparing; this is a
+  chat reply, not a report.
 - Be concise, factual, and avoid assumptions.
       `.trim() + chartNote
     };
@@ -459,7 +461,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       const errorMsg =
         "There was a problem contacting the AI model. Please try again later.";
     
-      await prisma.message.create({
+      const assistantMsg = await prisma.message.create({
         data: {
           conversationId,
           role: "assistant",
@@ -468,7 +470,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         }
       });
     
-      return NextResponse.json({ success: false, error: errorMsg });
+      return NextResponse.json({ success: false, messageId: assistantMsg.id, error: errorMsg });
     }
     finally {
       activeRequests.delete(requestId);
@@ -520,18 +522,18 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         activeRequests.delete(requestId);
       }
 
-      const kgAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const kgAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
       const kgTableCitations = pickTableCitations(kgAnswerText, tableCitationsSource);
 
       await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
-      await prisma.message.create({
+      const assistantMsg = await prisma.message.create({
         data: {
           conversationId, role: "assistant", content: kgAnswerText, status: "done",
           tableCitations: kgTableCitations.length ? kgTableCitations : undefined,
         },
       });
 
-      return NextResponse.json({ success: true, conversationId, answer: kgAnswerText, tableCitations: kgTableCitations });
+      return NextResponse.json({ success: true, conversationId, messageId: assistantMsg.id, answer: kgAnswerText, tableCitations: kgTableCitations });
     }
 
     // ----------------------------
@@ -570,18 +572,18 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
         activeRequests.delete(requestId);
       }
 
-      const tablesAnswerText = stripMarkdownArtifacts((followUp?.choices?.[0]?.message?.content || "").trim());
+      const tablesAnswerText = (followUp?.choices?.[0]?.message?.content || "").trim();
       const findTableCitations = pickTableCitations(tablesAnswerText, tableCitationsSource);
 
       await prisma.message.update({ where: { id: userMsg.id }, data: { status: "done" } });
-      await prisma.message.create({
+      const assistantMsg = await prisma.message.create({
         data: {
           conversationId, role: "assistant", content: tablesAnswerText, status: "done", chartData: chartSpec,
           tableCitations: findTableCitations.length ? findTableCitations : undefined,
         },
       });
 
-      return NextResponse.json({ success: true, conversationId, answer: tablesAnswerText, chart: chartSpec, tableCitations: findTableCitations });
+      return NextResponse.json({ success: true, conversationId, messageId: assistantMsg.id, answer: tablesAnswerText, chart: chartSpec, tableCitations: findTableCitations });
     }
 
     // ----------------------------
@@ -623,9 +625,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       });
     }
 
-    const assistantText = stripMarkdownArtifacts(
-      (completion?.choices?.[0]?.message?.content || "").trim()
-    );
+    const assistantText = (completion?.choices?.[0]?.message?.content || "").trim();
     const tableCitations = pickTableCitations(assistantText, tableCitationsSource);
 
     // ----------------------------
@@ -636,7 +636,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
       data: { status: "done" }
     });
 
-    await prisma.message.create({
+    const assistantMsg = await prisma.message.create({
       data: {
         conversationId,
         role: "assistant",
@@ -653,6 +653,7 @@ Rules (apply only once STEP 0 has determined the tool is NOT needed):
     return NextResponse.json({
       success: true,
       conversationId,
+      messageId: assistantMsg.id,
       answer: assistantText,
       chart: chartSpec,
       tableCitations

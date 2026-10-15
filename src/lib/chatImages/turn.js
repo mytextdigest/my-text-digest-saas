@@ -44,8 +44,8 @@ export async function runImageTurn({ openai, kind, conversationId, userMessageId
 
   if (plan.route === "answer_image") {
     const answer = await answerAboutImages({ openai, question: effectiveQuestion, images: selected, history, documentContext, signal });
-    await delegate.create({ data: { conversationId, role: "assistant", content: answer, status: "done" } });
-    return { success: true, conversationId, answer, attachments: [] };
+    const assistant = await delegate.create({ data: { conversationId, role: "assistant", content: answer, status: "done" } });
+    return { success: true, conversationId, messageId: assistant.id, answer, attachments: [] };
   }
 
   // generate_image — the lead-in shows straight away while the worker draws.

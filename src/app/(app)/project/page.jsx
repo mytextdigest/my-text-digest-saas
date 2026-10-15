@@ -5,9 +5,7 @@ import Layout from '@/components/layout/Layout';
 import TopicsView from '@/components/topics/TopicsView';
 import FileUpload from '@/components/documents/FileUpload';
 import { Modal, ModalHeader, ModalTitle, ModalContent } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Pencil } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { ArrowLeft, Pencil, Upload } from 'lucide-react';
 import ChatInterface from "@/components/chat/ChatInterface";
 import TwoColumnLayout from "@/components/layout/TwoColumnLayout";
 import DeleteConfirmationModal from '@/components/modals/DeleteConfirmationModal';
@@ -403,58 +401,51 @@ function ProjectPageInner() {
     }
   };
 
+  // Documents column: a header row (Back, project name, Upload) that lines up
+  // with the chat column's, over the topic list — no title block or margins.
+  const projectName = project ? project.name : `Project ${projectId}`;
   const documentPanel = (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="h-full flex flex-col space-y-6 pt-2.5"
-    >
-      {/* Page Header */}
-      <div className="flex items-center justify-between mb-4">
-        <Button
-          variant="ghost"
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900">
+      <div className="shrink-0 h-12 flex items-center gap-2 pl-3 pr-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          type="button"
           onClick={() => router.push('/dashboard/')}
-          className="flex items-center space-x-2 text-gray-600 dark:text-gray-400"
-          style={{
-            '--hover-text-color': '#000000',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#000000';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = '';
-          }}
+          title="Back to projects"
+          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-gray-100 dark:hover:bg-gray-800 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Back to Projects</span>
-        </Button>
-      </div>
-
-      <div className="text-center">
-        <div className="flex items-center justify-center gap-2">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-            {project ? project.name : `Project ${projectId}`}
+          <span>Back</span>
+        </button>
+        <div className="flex-1 min-w-0 flex items-center gap-1">
+          <h1
+            className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-gray-100"
+            title={project?.description ? `${projectName} — ${project.description}` : projectName}
+          >
+            {projectName}
           </h1>
           {project && (
             <button
+              type="button"
               onClick={handleEditProject}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
               title="Edit project name and description"
+              aria-label="Edit project"
+              className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-500 dark:hover:text-gray-200 dark:hover:bg-gray-800 transition-colors"
             >
-              <Pencil className="w-4 h-4" />
+              <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          {project?.description
-            ? <span>{project.description}</span>
-            : <span>Manage and organize project files</span>
-          }
-        </p>
+        <button
+          type="button"
+          onClick={() => setUploadModalOpen(true)}
+          className="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors"
+        >
+          <Upload className="h-4 w-4" />
+          <span>Upload</span>
+        </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0">
         <TopicsView
           topics={topics}
           documents={docs}
@@ -473,7 +464,7 @@ function ProjectPageInner() {
           onFilterChange={setActiveFilter}
         />
       </div>
-    </motion.div>
+    </div>
   );
 
   const chatPanel = (
@@ -483,13 +474,14 @@ function ProjectPageInner() {
   );
 
   return (
-    <Layout>
-      <div className="h-[calc(100vh-8rem)]"> 
+    <Layout fullBleed>
+      <div className="h-full">
         <TwoColumnLayout
           leftColumn={documentPanel}
           rightColumn={chatPanel}
           leftTitle="Documents"
           rightTitle="Chat"
+          resizable="project"
         />
       </div>
 

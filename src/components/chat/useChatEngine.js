@@ -74,7 +74,7 @@ export function useChatEngine({ ask, onResult, onError, onCancelled }) {
           continue;
         }
         if (job.status === 'done') {
-          onResultRef.current?.({ success: true, answer: job.answer, attachments: job.attachments || [], conversationId });
+          onResultRef.current?.({ success: true, messageId, answer: job.answer, attachments: job.attachments || [], conversationId });
         } else if (job.status === 'error') {
           onResultRef.current?.({ success: true, answer: job.answer || job.error, attachments: [], conversationId, status: 'error' });
         }

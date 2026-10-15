@@ -19,6 +19,23 @@ html.dark {
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Primary colour scale as Tailwind theme colours, so every utility and variant
+   works (bg-/text-/border-/ring-primary-*, hover:, focus:, dark:, /opacity).
+   These replace hand-written .bg-primary-* classes that sat outside Tailwind's
+   layers and silently overrode any hover/focus/dark primary variant. */
+@theme inline {
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+}
+
 
 
 :root {
@@ -93,49 +110,9 @@ html.dark {
 }
 
 /* Custom utility classes */
-.bg-primary-50 { background-color: var(--primary-50); }
-.bg-primary-100 { background-color: var(--primary-100); }
-.bg-primary-200 { background-color: var(--primary-200); }
-.bg-primary-300 { background-color: var(--primary-300); }
-.bg-primary-400 { background-color: var(--primary-400); }
-.bg-primary-500 { background-color: var(--primary-500); }
-.bg-primary-600 { background-color: var(--primary-600); }
-.bg-primary-700 { background-color: var(--primary-700); }
-.bg-primary-800 { background-color: var(--primary-800); }
-.bg-primary-900 { background-color: var(--primary-900); }
 
-.text-primary-50 { color: var(--primary-50); }
-.text-primary-100 { color: var(--primary-100); }
-.text-primary-200 { color: var(--primary-200); }
-.text-primary-300 { color: var(--primary-300); }
-.text-primary-400 { color: var(--primary-400); }
-.text-primary-500 { color: var(--primary-500); }
-.text-primary-600 { color: var(--primary-600); }
-.text-primary-700 { color: var(--primary-700); }
-.text-primary-800 { color: var(--primary-800); }
-.text-primary-900 { color: var(--primary-900); }
 
-.border-primary-50 { border-color: var(--primary-50); }
-.border-primary-100 { border-color: var(--primary-100); }
-.border-primary-200 { border-color: var(--primary-200); }
-.border-primary-300 { border-color: var(--primary-300); }
-.border-primary-400 { border-color: var(--primary-400); }
-.border-primary-500 { border-color: var(--primary-500); }
-.border-primary-600 { border-color: var(--primary-600); }
-.border-primary-700 { border-color: var(--primary-700); }
-.border-primary-800 { border-color: var(--primary-800); }
-.border-primary-900 { border-color: var(--primary-900); }
 
-.ring-primary-50 { --tw-ring-color: var(--primary-50); }
-.ring-primary-100 { --tw-ring-color: var(--primary-100); }
-.ring-primary-200 { --tw-ring-color: var(--primary-200); }
-.ring-primary-300 { --tw-ring-color: var(--primary-300); }
-.ring-primary-400 { --tw-ring-color: var(--primary-400); }
-.ring-primary-500 { --tw-ring-color: var(--primary-500); }
-.ring-primary-600 { --tw-ring-color: var(--primary-600); }
-.ring-primary-700 { --tw-ring-color: var(--primary-700); }
-.ring-primary-800 { --tw-ring-color: var(--primary-800); }
-.ring-primary-900 { --tw-ring-color: var(--primary-900); }
 
 /* Error colors */
 .bg-error-50 { background-color: var(--error-50); }
@@ -274,8 +251,12 @@ html.dark {
 }
 
 
-* {
-  border-color: hsl(var(--border));
+/* Default border colour. Kept in the base layer so Tailwind's border-* /
+   dark:border-* utilities can override it (an unlayered rule beats them). */
+@layer base {
+  *, ::before, ::after {
+    border-color: var(--border);
+  }
 }
 
 body {
