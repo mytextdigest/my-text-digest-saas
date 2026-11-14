@@ -176,6 +176,79 @@ model SlideImage {
   @@index([documentId])
 }
 
+// Slide talking points (docs/SLIDE_TALKING_POINTS_PRESENTER_NARRATION_FEATURE_SPEC.md,
+// desktop table slide_talking_points). One row per slide, keyed by the
+// slide's stable outline id — never its position — so points follow
+// reorders, survive AI edits and come back with an undo-delete. No relation
+// to SlideDeck on purpose: an orphan row can never block a deck delete; the
+// deck DELETE route removes these rows explicitly.
+model SlideTalkingPoint {
+  deckId      String   @map("deck_id")
+  slideId     String   @map("slide_id")
+  html        String   @default("") // sanitized rich text (talkingPoints.js)
+  origin      String   @default("ai") // 'ai' | 'user'
+  seconds     Int?
+  contentHash String?  @map("content_hash") // slideContentHash() when written
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@id([deckId, slideId])
+  @@map("slide_talking_points")
+}
+
+// One narration clip per slide (desktop table slide_audio). Audio bytes live
+// in S3 under slide-audio/<deckId>/; `s3Key` replaces desktop's file_path.
+model SlideAudio {
+  deckId          String   @map("deck_id")
+  slideId         String   @map("slide_id")
+  source          String? // 'generated' | 'uploaded' | 'recorded' | null
+  s3Key           String?  @map("s3_key")
+  mime            String?
+  durationMs      Int?     @map("duration_ms")
+  script          String?
+  scriptOrigin    String?  @map("script_origin")
+  notesHash       String?  @map("notes_hash")
+  voice           String?
+  audioScriptHash String?  @map("audio_script_hash")
+  numbersOkHash   String?  @map("numbers_ok_hash")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@id([deckId, slideId])
+  @@map("slide_audio")
+}
+
+// Deck-level AI voice settings (desktop table slide_narration_settings).
+model SlideNarrationSettings {
+  deckId String  @id @map("deck_id")
+  voice  String?
+  tone   String?
+  gapMs  Int?    @map("gap_ms")
+
+  @@map("slide_narration_settings")
+}
+
+// Progress + result of a slide media job (media queue) — where desktop sent
+// IPC progress events, the worker updates this row and the client polls it.
+// Inline route work (one slide's talking points or narration) also gets a
+// row while it runs, so the "one generation per deck" rule holds across
+// serverless instances.
+model SlideDeckJob {
+  id        String   @id @default(cuid())
+  deckId    String   @map("deck_id")
+  kind      String // 'talking-points' | 'narration' | 'deck-video' | 'talking-points-pdf' | 'audio-remux'
+  slideId   String?  @map("slide_id")
+  status    String   @default("queued") // queued | running | done | error | cancelled
+  phase     String? // 'script' | 'audio' | 'render' | 'encode'
+  done      Int      @default(0)
+  total     Int      @default(0)
+  result    Json? // {generated, failed, blocked, missing} | {s3Key, filename, durationMs}
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([deckId, kind])
+  @@map("slide_deck_jobs")
+}
+
 model Conversation {
   id         String    @id @default(cuid())
   createdAt  DateTime  @default(now()) @map("created_at")

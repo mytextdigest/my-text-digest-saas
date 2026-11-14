@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -75,9 +75,11 @@ export function ToolbarSpacer() {
 }
 
 // A toolbar button that opens a small dropdown.
-// items: [{ label, icon?, onClick, active?, collapse? } | 'divider' | { divider: true, collapse? }].
+// items: [{ label, icon?, onClick, active?, danger?, title?, collapse? } | 'divider' | { divider: true, collapse? }].
 // An item with `collapse` only shows while the matching toolbar button is hidden.
-// The menu is position: fixed so the toolbar's horizontal overflow can't clip it.
+// A disabled item with a `title` keeps its tooltip (it stays hoverable).
+// The menu is position: fixed so the toolbar's horizontal overflow can't clip it,
+// and opens upward when there isn't room below the button.
 export function ToolbarMenu({ icon, label, items, trigger, align = "right" }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -101,6 +103,14 @@ export function ToolbarMenu({ icon, label, items, trigger, align = "right" }) {
       window.removeEventListener("resize", onScroll);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || !pos || pos.bottom !== undefined || !menuRef.current || !anchorRef.current) return;
+    if (menuRef.current.getBoundingClientRect().bottom <= window.innerHeight - 8) return;
+    const r = anchorRef.current.getBoundingClientRect();
+    const { top, ...rest } = pos;
+    setPos({ ...rest, bottom: window.innerHeight - r.top + 4 });
+  }, [open, pos]);
 
   const toggle = () => {
     if (!open && anchorRef.current) {
@@ -130,13 +140,16 @@ export function ToolbarMenu({ icon, label, items, trigger, align = "right" }) {
                 role="menuitem"
                 onClick={() => { setOpen(false); item.onClick(); }}
                 disabled={item.disabled}
+                title={item.title}
                 className={cn(
-                  "w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:pointer-events-none",
+                  "w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40",
+                  item.title ? "disabled:hover:bg-transparent disabled:cursor-default" : "disabled:pointer-events-none",
                   item.active && "font-medium text-primary-700 dark:text-primary-300",
+                  item.danger && "text-red-600 dark:text-red-400",
                   item.collapse && COLLAPSE[item.collapse].menu
                 )}
               >
-                {item.icon && <item.icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />}
+                {item.icon && <item.icon className={cn("h-4 w-4", item.danger ? "text-red-500 dark:text-red-400" : "text-gray-500 dark:text-gray-400")} />}
                 <span>{item.label}</span>
               </button>
             )

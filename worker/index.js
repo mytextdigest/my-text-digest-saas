@@ -26,12 +26,17 @@ import {
   processTablesReembedJob,
 } from "./processTables.js";
 import { processChatImageJob, failChatImageMessage } from "./processChatImage.js";
+import { MEDIA_JOB_TYPES, processSlideMediaJob, failSlideMediaJob } from "./processSlideMedia.js";
 
 const QUEUE_URL = process.env.SQS_QUEUE_URL;
 // Chat-image jobs get their own queue and poll loop, so an image request
 // never waits behind a large document's chunk → embed → summarize chain.
 // Unset (local dev): they arrive on the main queue instead.
 const CHAT_QUEUE_URL = process.env.SQS_CHAT_QUEUE_URL;
+// Slide media jobs (talking points, narration, PDF, video) get their own
+// queue and poll loop too, so a minute-long narration run or a video export
+// never holds up document processing. Unset (local dev): main queue.
+const MEDIA_QUEUE_URL = process.env.SQS_MEDIA_QUEUE_URL;
 const S3_BUCKET = process.env.S3_BUCKET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -684,13 +689,14 @@ async function processJob(job) {
   if (job.type === "tables-figures") return processTablesFiguresJob(job);
   if (job.type === "tables-reembed") return processTablesReembedJob(job);
   if (job.type === "chat-image")     return processChatImageJob(job);
+  if (MEDIA_JOB_TYPES.includes(job.type)) return processSlideMediaJob(job);
 
   throw new Error("Unknown job type: " + job.type);
 }
 
 
-// One message at a time per queue, each with its own watchdog. Two of
-// these run side by side (main + chat), independently.
+// One message at a time per queue, each with its own watchdog. Up to three
+// of these run side by side (main + chat + media), independently.
 async function pollLoop(queueUrl, label) {
   console.log(`Worker started [${label}]. Waiting for jobs...`);
 
@@ -785,7 +791,16 @@ async function pollLoop(queueUrl, label) {
 // internal error onto the chat message itself (never throws), so only a
 // watchdog timeout reaches this catch — which must still resolve the
 // message, or its "generating" placeholder would spin forever.
+//
+// Slide media jobs (MEDIA_JOB_TYPES) are keyed by `jobId`/`deckId` and catch
+// every internal error onto their SlideDeckJob row, so again only a watchdog
+// timeout lands here: it fails the row (whose cancel watcher then aborts the
+// work still running). They never touch Document.status.
 async function recordJobFailure(body, err) {
+  if (MEDIA_JOB_TYPES.includes(body?.type)) {
+    await failSlideMediaJob(body, err);
+    return;
+  }
   if (body?.type === "chat-image") {
     await failChatImageMessage(body, err);
     return;
@@ -844,3 +859,4 @@ function startLoop(queueUrl, label) {
 
 startLoop(QUEUE_URL, "main");
 if (CHAT_QUEUE_URL && CHAT_QUEUE_URL !== QUEUE_URL) startLoop(CHAT_QUEUE_URL, "chat");
+if (MEDIA_QUEUE_URL && MEDIA_QUEUE_URL !== QUEUE_URL && MEDIA_QUEUE_URL !== CHAT_QUEUE_URL) startLoop(MEDIA_QUEUE_URL, "media");

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   DndContext, DragOverlay, PointerSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core';
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, Trash2, MessageSquareText, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SlideRenderer from './renderer/SlideRenderer';
 
@@ -15,7 +15,7 @@ const THUMB_SCALE = 12; // px-per-inch -> ~160px-wide thumbnails (13.3in slide w
 // select a slide without a separate drag handle.
 //
 // Ported verbatim — @dnd-kit/core was already a dependency in this repo.
-function SlideThumbnail({ index, slide, theme, isSelected, onSelect, onDuplicate, onDelete, canDelete, disabled }) {
+function SlideThumbnail({ index, slide, theme, isSelected, onSelect, onDuplicate, onDelete, canDelete, disabled, talkingPointsStatus, audioStatus }) {
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: `thumb-${index}`,
     data: { index },
@@ -79,6 +79,31 @@ function SlideThumbnail({ index, slide, theme, isSelected, onSelect, onDuplicate
           )}
         </div>
       )}
+      {/* Talking points (TALKING_POINTS_ROADMAP.md Phase 3): has points /
+          points out of date because the slide changed since. */}
+      {talkingPointsStatus && (
+        <span
+          title={talkingPointsStatus === 'stale' ? 'Talking points out of date' : 'Has talking points'}
+          className={cn(
+            'absolute bottom-1 left-1 z-10 w-[18px] h-[18px] rounded-full flex items-center justify-center',
+            talkingPointsStatus === 'stale' ? 'bg-amber-500 text-white' : 'bg-black/60 text-white'
+          )}
+        >
+          <MessageSquareText className="w-2.5 h-2.5" />
+        </span>
+      )}
+      {audioStatus && (
+        <span
+          title={audioStatus === 'check' ? 'Narration: check the numbers in the script' : audioStatus === 'stale' ? 'Narration out of date' : 'Has narration audio'}
+          className={cn(
+            'absolute bottom-1 z-10 w-[18px] h-[18px] rounded-full flex items-center justify-center',
+            talkingPointsStatus ? 'left-[26px]' : 'left-1',
+            audioStatus === 'check' ? 'bg-red-600 text-white' : audioStatus === 'stale' ? 'bg-amber-500 text-white' : 'bg-black/60 text-white'
+          )}
+        >
+          <Volume2 className="w-2.5 h-2.5" />
+        </span>
+      )}
       <SlideRenderer slide={slide} theme={theme} scale={THUMB_SCALE} slideIndex={index} />
     </div>
   );
@@ -89,7 +114,7 @@ function SlideThumbnail({ index, slide, theme, isSelected, onSelect, onDuplicate
 // supplies `onReorder(fromIndex, toIndex)` for persistence.
 export default function SlideThumbnailRail({
   slides, theme, selectedIndex, onSelect, disabled, reorderError, onReorder, onDuplicate, onDelete,
-  orientation = 'vertical',
+  orientation = 'vertical', talkingPointsStatus, audioStatus,
 }) {
   const [activeDragIndex, setActiveDragIndex] = useState(null);
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -147,6 +172,8 @@ export default function SlideThumbnailRail({
               onDelete={onDelete}
               canDelete={slides.length > 1}
               disabled={disabled}
+              talkingPointsStatus={talkingPointsStatus?.[i]}
+              audioStatus={audioStatus?.[i]}
             />
           </div>
         ))}

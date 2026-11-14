@@ -508,3 +508,27 @@ body {
   min-height: 0;
   overflow: hidden;
 }
+
+/* Talking points rich-text editor (slides/TalkingPointsEditor.jsx) — no
+   typography plugin in this project, so the few block styles Tiptap emits are
+   styled here. Keep in step with the PDF export's styles in
+   src/lib/slides/talkingPoints.js (buildTalkingPointsPdfHtml). */
+.tp-editor .ProseMirror { outline: none; min-height: 100%; }
+.tp-editor .ProseMirror p { margin: 0 0 0.5rem; }
+.tp-editor .ProseMirror h3 { font-size: 0.95rem; font-weight: 600; margin: 0.75rem 0 0.35rem; color: #111827; }
+.tp-editor .ProseMirror ul { list-style: disc; padding-left: 1.25rem; margin: 0 0 0.5rem; }
+.tp-editor .ProseMirror ol { list-style: decimal; padding-left: 1.25rem; margin: 0 0 0.5rem; }
+.tp-editor .ProseMirror li { margin: 0.15rem 0; }
+.tp-editor .ProseMirror li p { margin: 0; }
+.tp-editor .ProseMirror li::marker { color: #9ca3af; }
+.tp-editor .ProseMirror strong { font-weight: 600; color: #111827; }
+.tp-editor .ProseMirror mark { background: #fef08a; color: inherit; border-radius: 2px; padding: 0 1px; }
+.dark .tp-editor .ProseMirror h3,
+.dark .tp-editor .ProseMirror strong { color: #f3f4f6; }
+.dark .tp-editor .ProseMirror mark { background: rgba(250, 204, 21, 0.35); }
+.tp-editor .ProseMirror > *:first-child { margin-top: 0; }
+
+/* Presenter view's notes pane (slides/present/PresenterView.jsx): A+/A−
+   sets --tp-font-size; overrides the editor's text-sm. */
+.tp-presenter .tp-editor .ProseMirror { font-size: var(--tp-font-size, 18px); line-height: 1.55; }
+.tp-presenter .tp-editor .ProseMirror h3 { font-size: 1.1em; }

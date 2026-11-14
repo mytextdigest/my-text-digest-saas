@@ -7,10 +7,12 @@ import {
   AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+  Sparkles, MessageSquareText, Download, ChevronDown, FileDown, Check,
+  Maximize, MonitorPlay, Film, Volume2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
-import { resolveTheme, PALETTES, SLIDE_W, SLIDE_H } from '@/lib/slides/theme.js';
+import { PALETTES, SLIDE_W, SLIDE_H } from '@/lib/slides/theme.js';
 import SlideRenderer from './renderer/SlideRenderer';
 import ThemeSelector from './ThemeSelector';
 import SlideThumbnailRail from './SlideThumbnailRail';
@@ -19,6 +21,23 @@ import TextPanel from './toolbar/TextPanel';
 import ShapesPanel from './toolbar/ShapesPanel';
 import UploadsPanel from './toolbar/UploadsPanel';
 import BackgroundPanel from './toolbar/BackgroundPanel';
+import DocumentTabs from '@/components/documents/document/DocumentTabs';
+import { ToolbarMenu } from '@/components/documents/viewer/ViewerToolbar';
+import TalkingPointsPanel from './talkingPoints/TalkingPointsPanel';
+import FullScriptModal from './talkingPoints/FullScriptModal';
+import { useTalkingPoints } from './talkingPoints/useTalkingPoints';
+import { useSlideAudio } from './narration/useSlideAudio';
+import NarrationPanel from './narration/NarrationPanel';
+import { deckTheme } from './deckTheme';
+import slidesApi from '@/lib/slidesApi';
+
+const PANEL_WIDTH_KEY = 'mtd.editor.rightPanelWidth';
+const PANEL_DEFAULT_W = 380;
+const PANEL_MIN_W = 300;
+const clampPanelWidth = (w) => {
+  const max = typeof window !== 'undefined' ? Math.max(PANEL_MIN_W, Math.min(800, Math.round(window.innerWidth * 0.55))) : 800;
+  return Math.max(PANEL_MIN_W, Math.min(max, Math.round(w)));
+};
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -554,6 +573,73 @@ export default function SlideDeckEditor({ deckId, onClose }) {
   // Slightly under 1 by default so the toolbar/canvas don't feel cramped —
   // independent of the auto-fit-to-container base scale.
   const [zoom, setZoom] = useState(0.85);
+  // Right panel tabs (TALKING_POINTS_ROADMAP.md Phase 2,
+  // SLIDE_AUDIO_ROADMAP.md): 'ai' | 'talking' | 'narration'.
+  const [rightTab, setRightTab] = useState('ai');
+  // Right panel width: drag its left edge; remembered per user.
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_W);
+  const [resizingPanel, setResizingPanel] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+      if (saved) setPanelWidth(clampPanelWidth(saved));
+    } catch (e) { /* ignore */ }
+  }, []);
+  const startPanelResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    let latest = startW;
+    // The full-window drag overlay goes up on the first move, not on press —
+    // up on press, it took the release and the double-click (reset) never
+    // reached the handle.
+    const move = (ev) => { setResizingPanel(true); latest = clampPanelWidth(startW + (startX - ev.clientX)); setPanelWidth(latest); };
+    const up = () => {
+      setResizingPanel(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(latest)); } catch (err) { /* ignore */ }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const resetPanelWidth = () => {
+    setPanelWidth(PANEL_DEFAULT_W);
+    try { localStorage.setItem(PANEL_WIDTH_KEY, String(PANEL_DEFAULT_W)); } catch (e) { /* ignore */ }
+  };
+  const [scriptOpen, setScriptOpen] = useState(false);
+  // Header Export menu: null | 'deck' | 'pdf' | 'video' while a download
+  // runs, and a short-lived result message shown next to the button.
+  const [exporting, setExporting] = useState(null);
+  const [exportResult, setExportResult] = useState(null);
+  const tp = useTalkingPoints(deckId, deck?.outlineJson?.slides);
+  // Narration clips (SLIDE_AUDIO_ROADMAP.md) — the Narration tab, filmstrip
+  // speaker badges, video export.
+  const na = useSlideAudio(deckId, deck?.outlineJson?.slides, tp.points);
+  // Video export progress: {phase: 'render' | 'encode', done, total}.
+  const [videoProgress, setVideoProgress] = useState(null);
+  useEffect(() => slidesApi.onDeckVideoProgress?.((p) => setVideoProgress(p)), []);
+  // Presenter view session (presentationSession.js) started from here —
+  // the header shows "Presenting…" while it runs; when it ends the editor
+  // lands on the slide the talk stopped at.
+  const [presenting, setPresenting] = useState(false);
+
+  useEffect(() => slidesApi.onPresentationEnded?.((data) => {
+    setPresenting(false);
+    if (String(data?.deckId) === String(deckId) && Number.isInteger(data.index)) setSelectedIndex(data.index);
+  }), [deckId]);
+
+  // Slides edited/reordered mid-talk: presenter + audience windows refetch.
+  useEffect(() => {
+    if (presenting && deck?.outlineJson) slidesApi.presentationDeckChanged?.(deckId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck?.outlineJson]);
+
+  useEffect(() => {
+    if (!exportResult) return;
+    const t = setTimeout(() => setExportResult(null), 4000);
+    return () => clearTimeout(t);
+  }, [exportResult]);
 
   const fetchDeck = async () => {
     const res = await fetch(`/api/slide-decks/${deckId}`).then((r) => r.json()).catch(() => null);
@@ -644,7 +730,7 @@ export default function SlideDeckEditor({ deckId, onClose }) {
   // (backup for when true fullscreen wasn't granted — see effect above).
   useEffect(() => {
     const outline = deck?.outlineJson;
-    if (!outline) return;
+    if (!outline || scriptOpen) return;
 
     const handleKeyDown = (e) => {
       if (isPresenting) {
@@ -683,7 +769,7 @@ export default function SlideDeckEditor({ deckId, onClose }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deck?.outlineJson, isPresenting, selectedElementIds]);
+  }, [deck?.outlineJson, isPresenting, selectedElementIds, scriptOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -737,6 +823,55 @@ export default function SlideDeckEditor({ deckId, onClose }) {
   // Same disabling condition as reorderDisabled, named separately since it
   // guards a conceptually different surface (the left tools panel).
   const freeformDisabled = reorderDisabled;
+
+  const handleDownloadDeck = async () => {
+    setExporting('deck');
+    const res = await slidesApi.saveSlideDeck(deckId);
+    setExporting(null);
+    if (res?.success) setExportResult({ ok: true, text: 'Deck saved' });
+    else if (!res?.canceled) setExportResult({ ok: false, text: res?.error || 'Could not save the deck.' });
+  };
+
+  const handleDownloadTalkingPoints = async () => {
+    setExporting('pdf');
+    const res = await tp.exportPdf();
+    setExporting(null);
+    if (res?.success) setExportResult({ ok: true, text: 'PDF saved' });
+    else if (!res?.canceled) setExportResult({ ok: false, text: res?.error || 'Could not create the PDF.' });
+  };
+
+  const handleDownloadVideo = async () => {
+    setExporting('video');
+    setVideoProgress(null);
+    const res = await slidesApi.exportDeckVideo({ deckId });
+    setExporting(null);
+    setVideoProgress(null);
+    if (res?.success) setExportResult({ ok: true, text: 'Video saved' });
+    else if (res?.cancelled) setExportResult({ ok: false, text: 'Video export cancelled' });
+    else if (!res?.canceled) setExportResult({ ok: false, text: res?.error || 'Could not create the video.' });
+  };
+
+  // mode: undefined (presenter view + projector / shareable audience window,
+  // whichever fits the current displays) | 'rehearse' (presenter view only).
+  const startPresentation = async ({ fromBeginning = false, mode } = {}) => {
+    const res = await slidesApi.presentationStart({ deckId, startIndex: fromBeginning ? 0 : selectedIndex, mode });
+    if (res?.success) setPresenting(true);
+    else setExportResult({ ok: false, text: res?.error || 'Could not start the presentation.' });
+  };
+
+  // A freeform selection must not survive into the full-script view, or a
+  // Delete/Backspace pressed there (outside an editor) would delete it.
+  const openFullScript = () => {
+    setSelectedElementId(null);
+    setEditingElementId(null);
+    setSelectedFieldPath(null);
+    setEditingFieldPath(null);
+    setScriptOpen(true);
+  };
+  const closeFullScript = () => {
+    setScriptOpen(false);
+    tp.refreshEditors(); // side panel picks up edits made in the modal
+  };
 
   // Reads a {slideIndex, elements, backgroundColor} snapshot out of a given
   // deck value — used both to push an undo entry (from the CURRENT deck,
@@ -1442,7 +1577,7 @@ export default function SlideDeckEditor({ deckId, onClose }) {
   // case out of slide traversal when there's a selection — this is where
   // that case is actually handled.
   useEffect(() => {
-    if (!deck?.outlineJson || isPresenting) return;
+    if (!deck?.outlineJson || isPresenting || scriptOpen) return;
     const handleKeyDown = (e) => {
       const active = document.activeElement;
       const isEditableFocus = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
@@ -1483,22 +1618,14 @@ export default function SlideDeckEditor({ deckId, onClose }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deck?.outlineJson, isPresenting, selectedElementIds, selectedIndex]);
+  }, [deck?.outlineJson, isPresenting, selectedElementIds, selectedIndex, scriptOpen]);
 
   if (!deckId) return null;
 
   const outline = deck?.outlineJson;
-  const activeBrandKit = outline?.brandKit?.active ? outline.brandKit : null;
-  const theme = outline ? resolveTheme(outline.paletteName, outline.fontPairName, activeBrandKit?.colors) : null;
-  // Mirrors src/lib/slides/buildDeck.js's own unconditional assignment —
-  // without this, the live preview's theme object never carried
-  // presentationType, so SlideRenderer.jsx's getStyle() could never resolve
-  // anything but the plain default, even for a pitch-deck/sales deck whose
-  // exported .pptx renders with real bold/warm card chrome.
-  if (theme) theme.presentationType = outline.presentationType || null;
-  if (theme && activeBrandKit?.logoPath) {
-    theme.logo = { url: activeBrandKit.logoPath, width: activeBrandKit.logoWidth, height: activeBrandKit.logoHeight };
-  }
+  // Shared with presenter view / the audience window (deckTheme.js) so every
+  // live preview matches the exported .pptx.
+  const theme = deckTheme(outline);
   const selectedElement = outline?.slides[selectedIndex]?.elements?.find((el) => el.id === selectedElementId) || null;
   const mainScale = (Math.max(1, previewWidth - 32) / 13.3) * zoom; // 13.3in slide width, minus a little padding, times manual zoom
   // How many slides carry freeform overrides (elements and/or a custom
@@ -1543,11 +1670,77 @@ export default function SlideDeckEditor({ deckId, onClose }) {
               </h2>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {exporting === 'video' && (
+                <span role="status" className="text-xs flex items-center gap-2 text-primary-700 dark:text-primary-300">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="tabular-nums">
+                    {!videoProgress ? 'Preparing video…'
+                      : videoProgress.phase === 'render' ? `Drawing slides ${videoProgress.done}/${videoProgress.total}`
+                      : `Encoding video ${videoProgress.done}/${videoProgress.total}`}
+                  </span>
+                  <button type="button" onClick={() => slidesApi.cancelDeckVideo()} className="font-medium hover:underline">Cancel</button>
+                </span>
+              )}
+              {exportResult && !exporting && (
+                <span
+                  role="status"
+                  className={cn(
+                    'text-xs flex items-center gap-1 max-w-64 truncate',
+                    exportResult.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                  )}
+                >
+                  {exportResult.ok && <Check className="w-3.5 h-3.5 shrink-0" />}
+                  {exportResult.text}
+                </span>
+              )}
               {deck?.outlineJson && (
-                <Button variant="outline" size="sm" onClick={() => setIsPresenting(true)} className="text-xs h-8">
-                  <Play className="w-3.5 h-3.5 mr-1.5" />
-                  Present
-                </Button>
+                <ToolbarMenu
+                  align="right"
+                  items={[
+                    { label: 'Download deck (.pptx)', icon: Presentation, onClick: handleDownloadDeck, disabled: deck.status !== 'ready' || !!exporting },
+                    { label: 'Download talking points (.pdf)', icon: FileDown, onClick: handleDownloadTalkingPoints, disabled: tp.summary.covered === 0 || !!exporting },
+                    { label: 'Download video (.mp4)', icon: Film, onClick: handleDownloadVideo, disabled: deck.status !== 'ready' || !!exporting },
+                  ]}
+                  trigger={({ open, toggle }) => (
+                    <Button variant="outline" size="sm" onClick={toggle} aria-haspopup="menu" aria-expanded={open} className="text-xs h-8">
+                      {exporting ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                      Export
+                      <ChevronDown className={cn('w-3.5 h-3.5 ml-1 transition-transform', open && 'rotate-180')} />
+                    </Button>
+                  )}
+                />
+              )}
+              {deck?.outlineJson && presenting && (
+                <span className="flex items-center gap-2 text-xs text-primary-700 dark:text-primary-300">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  Presenting
+                  <Button variant="outline" size="sm" onClick={() => slidesApi.presentationEnd()} className="text-xs h-8">
+                    End
+                  </Button>
+                </span>
+              )}
+              {deck?.outlineJson && !presenting && (
+                // Split button: the main part shows the slides full screen;
+                // the chevron also offers presenter view (notes + timer, with
+                // a projector or a shareable audience window for the slides).
+                <div className="flex">
+                  <Button variant="outline" size="sm" onClick={() => setIsPresenting(true)} className="text-xs h-8 rounded-r-none border-r-0" title="Show the slides full screen">
+                    <Play className="w-3.5 h-3.5 mr-1.5" />
+                    Present (full screen)
+                  </Button>
+                  <ToolbarMenu
+                    align="right"
+                    items={[
+                      { label: 'Present (full screen)', icon: Maximize, onClick: () => setIsPresenting(true) },
+                      { label: 'Presenter View', icon: MonitorPlay, onClick: () => startPresentation() },
+                    ]}
+                    trigger={({ open, toggle }) => (
+                      <Button variant="outline" size="sm" onClick={toggle} aria-haspopup="menu" aria-expanded={open} aria-label="More ways to present" className="text-xs h-8 px-1.5 rounded-l-none">
+                        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
+                      </Button>
+                    )}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -2076,8 +2269,57 @@ export default function SlideDeckEditor({ deckId, onClose }) {
                 </div>
               </div>
 
-              {/* Right: edit panel */}
-              <div className="w-80 shrink-0 border-l border-gray-200 dark:border-gray-700 flex flex-col">
+              {/* Right: edit panel — AI Edit | Talking Points | Narration
+                  tabs, same DocumentTabs bar as the document page's right
+                  panel. Resizable from its left edge. */}
+              <div className="relative shrink-0 border-l border-gray-200 dark:border-gray-700 flex flex-col" style={{ width: panelWidth }}>
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize panel"
+                  title="Drag to resize · double-click to reset"
+                  onPointerDown={startPanelResize}
+                  onDoubleClick={resetPanelWidth}
+                  className={cn(
+                    'absolute -left-1 top-0 bottom-0 w-2 z-20 cursor-col-resize transition-colors',
+                    resizingPanel ? 'bg-primary-400/60' : 'hover:bg-primary-400/40'
+                  )}
+                />
+                {/* While dragging, keep the cursor and stop text selection everywhere. */}
+                {resizingPanel && <div className="fixed inset-0 z-50 cursor-col-resize select-none" />}
+                <div className="shrink-0 h-12 flex items-center px-3 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex-1 min-w-0">
+                    <DocumentTabs
+                      tabs={[
+                        { id: 'ai', label: 'AI Edit', icon: Sparkles },
+                        { id: 'talking', label: 'Talking Points', icon: MessageSquareText },
+                        { id: 'narration', label: 'Narration', icon: Volume2 },
+                      ]}
+                      activeTab={rightTab}
+                      onChange={setRightTab}
+                    />
+                  </div>
+                </div>
+
+                {rightTab === 'narration' ? (
+                  <NarrationPanel
+                    na={na}
+                    slide={outline.slides[selectedIndex]}
+                    slideIndex={selectedIndex}
+                    slideCount={outline.slides.length}
+                    deckBusy={deck.status !== 'ready'}
+                  />
+                ) : rightTab === 'talking' ? (
+                  <TalkingPointsPanel
+                    tp={tp}
+                    slide={outline.slides[selectedIndex]}
+                    slideIndex={selectedIndex}
+                    slideCount={outline.slides.length}
+                    deckBusy={deck.status !== 'ready'}
+                    onOpenFullScript={openFullScript}
+                  />
+                ) : (
+                <>
                 <div className="shrink-0">
                   <ThemeSelector
                     palettes={PALETTES}
@@ -2090,7 +2332,7 @@ export default function SlideDeckEditor({ deckId, onClose }) {
                     onSelectBrand={handleSelectBrandPalette}
                   />
                   {themeError && (
-                    <div className="mx-3 mt-2 text-xs px-2 py-1.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                    <div className="mx-3 mt-2 text-sm px-2.5 py-2 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                       {themeError}
                     </div>
                   )}
@@ -2130,7 +2372,7 @@ export default function SlideDeckEditor({ deckId, onClose }) {
                       : `Edits apply only to slide ${selectedIndex + 1} ("${outline.slides[selectedIndex]?.title || outline.slides[selectedIndex]?.type}"). Color/theme requests still apply to the whole deck, to keep it cohesive.`}
                   </p>
                   {mode === 'deck' && manualEditSlideCount > 0 && (
-                    <div className="text-xs px-2 py-1.5 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    <div className="text-sm px-2.5 py-2 rounded-md bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                       {manualEditSlideCount} slide{manualEditSlideCount === 1 ? '' : 's'} {manualEditSlideCount === 1 ? 'has' : 'have'} manual edits — positions/colors will be kept, but content may be rewritten.
                     </div>
                   )}
@@ -2141,12 +2383,12 @@ export default function SlideDeckEditor({ deckId, onClose }) {
                     </div>
                   )}
                   {lastError && (
-                    <div className="text-xs px-2 py-1.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                    <div className="text-sm px-2.5 py-2 rounded-md bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                       {lastError}
                     </div>
                   )}
                   {lastInstruction && !isEditing && !lastError && (
-                    <div className="text-xs px-2 py-1.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 flex items-start gap-1.5">
+                    <div className="text-sm px-2.5 py-2 rounded-md bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 flex items-start gap-1.5">
                       <RefreshCw className="w-3 h-3 mt-0.5 shrink-0" />
                       <span>Last edit: &quot;{lastInstruction}&quot;</span>
                     </div>
@@ -2172,6 +2414,8 @@ export default function SlideDeckEditor({ deckId, onClose }) {
                     <span>{isEditing ? 'Applying…' : 'Apply Edit'}</span>
                   </Button>
                 </form>
+                </>
+                )}
               </div>
             </div>
 
@@ -2187,10 +2431,24 @@ export default function SlideDeckEditor({ deckId, onClose }) {
               onReorder={handleReorder}
               onDuplicate={handleDuplicate}
               onDelete={handleDeleteSlide}
+              talkingPointsStatus={tp.statusBySlide}
+              audioStatus={na.statusBySlide.map((st) => (st.numbersBlocked ? 'check' : st.audio))}
             />
           </div>
         )}
       </div>
+      {outline && (
+        <FullScriptModal
+          isOpen={scriptOpen}
+          onClose={closeFullScript}
+          tp={tp}
+          slides={outline.slides}
+          theme={theme}
+          deckTitle={deck?.title}
+          deckBusy={deck?.status !== 'ready'}
+          onJumpToSlide={(i) => { setSelectedIndex(i); setRightTab('talking'); closeFullScript(); }}
+        />
+      )}
       {isPresenting && outline && (
         <div
           ref={presentRef}
